@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      SdkRoot points to the aperture-foundation-sdk repo on this machine.
+      Override via environment variable or a local Directory.Build.props.
+      Replace with PackageReference once SDK packages are published to CodeArtifact.
+    -->
+    <SdkRoot Condition="'$(SdkRoot)'==''">C:\Users\vishalkumar\aperture-foundation\aperture-foundation-sdk</SdkRoot>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>14.0</LangVersion>
+  </PropertyGroup>
+</Project>

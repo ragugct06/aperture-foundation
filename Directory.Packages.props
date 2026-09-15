@@ -1,5 +1,8 @@
 <Project>
   <ItemGroup>
+    <!-- Aperture Platform SDK -->
+    <PackageVersion Include="Aperture.Platform.Abstractions" Version="*-*" />
+
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />

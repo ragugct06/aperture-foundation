@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>Aperture.Entitlements.Api</RootNamespace>
+    <UserSecretsId>Aperture-Entitlements-Api-Development</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Aperture.Entitlements.Contracts/Aperture.Entitlements.Contracts.csproj" />
+    <ProjectReference Include="../Aperture.Entitlements.Infrastructure/Aperture.Entitlements.Infrastructure.csproj" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

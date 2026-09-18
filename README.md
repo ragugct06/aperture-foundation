@@ -1,189 +1,228 @@
-# Aperture Foundation Services
+# Aperture Entitlements API
 
-This repository contains the **platform control-plane services** for the Aperture platform. These are the remote foundation services that the Platform SDK thin clients call at runtime.
+This solution implements the Entitlements API with trusted identity propagation from an already-authenticated Domain API, PostgreSQL persistence, and Redis user-context caching. Authentication and action-level authorization are owned by the calling Domain API.
 
-> This is not the SDK. The SDK (NuGet packages) lives in `aperture-foundation-sdk`. This repo contains the actual services that the SDK talks to over HTTP.
+The BFF implementation has been removed. Browser login, session-cookie handling, token storage, proxying, PKCE, and CSRF behavior are outside this solution.
 
----
+## Updated model
 
-## How this repo fits in the platform
+### User
 
-The Aperture Platform SDK (`Aperture.Platform.*`) runs embedded inside every domain macroservice. Most SDK capabilities — tenant resolution, persistence, caching, messaging, audit writes, correlation — run entirely in-process or directly against infrastructure (PostgreSQL, Redis, SQS). They never make a network call to a foundation service.
+The former `Subject` model is now `User`. Its business fields are:
 
-Only three capabilities are genuinely remote and require a foundation service:
+- `FirstName`
+- `LastName`
+- `Email`
+- `Status`: `active`, `suspended`, or `deprovisioned`
 
-| Capability | What calls it | This repo |
-|---|---|---|
-| Entitlement / PDP (Authorize) | SDK PEP middleware at runtime | Separate repo (Ragupathi) |
-| Patient Identity / EMPI (Resolve) | SDK EMPI thin client | `aperture-patient-identity` repo |
-| Rules version lookup (effective definition) | SDK Rules thin client (cached) | `Aperture.PlatformServices.RulesRegistry` (this repo) |
+`UserId` is the database identifier and `ContextVersion` is internal cache/concurrency metadata. Email is normalized to lowercase and is unique.
 
-Config / feature flags is **not** a remote REST service. It reads from AWS AppConfig / SSM directly via the SDK library. `Aperture.PlatformServices.Config` in this repo is a placeholder for the future authoring/admin surface only.
+### Role
 
----
+The former `Persona` model is now `Role`. A role contains:
 
-## Repository structure
+- `RoleId`
+- `RoleKey`
+- `Description`
+- `Status`: `active` or `retired`
 
-```
-aperture-foundation/
-├── Directory.Build.props                   # shared build settings (net10.0, nullable, warnings-as-errors)
-├── Directory.Packages.props                # central NuGet version pinning
-├── ApertureFoundation.sln
-├── Aperture.PlatformServices.RulesRegistry/   # Rules Registry REST service (M0)
-└── Aperture.PlatformServices.Config/          # Config authoring surface (deferred, stub only)
-```
+There is no separate persona-to-role bridge. The Domain API receives the effective `RoleKey` values and performs its own authorization.
 
----
+### Role assignment
 
-## Services
+A role assignment connects one user to one role and remains effective-dated:
 
-### 1. Aperture.PlatformServices.RulesRegistry
-
-The Rules Registry is the system of record for versioned, effective-dated rule definitions. It is the only service in this repo that is active in M0.
-
-**What it does:**
-- Stores immutable rule set versions registered by the CI/CD pipeline after PR approval in Bitbucket
-- Enforces no-overlap constraint — at most one approved version per rule set per effective date range per scope
-- Serves effective-dated version lookups to the SDK rules thin client
-- Binds every rule decision to its exact version and Git commit SHA for audit and compliance (21 CFR Part 11)
-
-**Why a dedicated service and not just Git/S3:**
-Git captures deploy-time lineage. A copay audit needs effective-time — "which rule was in force on the service date, prove it." Deploy time is not effective time. S3 holds only the current version. Nothing in Git/S3 durably binds a stored decision to its rule version. The Rules Registry is the system of record; Git is the front door.
-
-**REST API surface:**
-
-| Method | Path | Caller | Purpose |
-|---|---|---|---|
-| POST | /rules/versions | CI/CD pipeline (after PR approval) | Register an immutable approved rule set version |
-| GET | /rules/versions | SDK rules thin client | List versions for a rule set key |
-| GET | /rules/versions/{id} | SDK rules thin client | Fetch a specific version by ID |
-
-> Rule execution itself is NOT done here. The SDK fetches the definition (and caches it), then executes it in-process using Microsoft RulesEngine. There is no remote rule-execution endpoint.
-
-**Effective-dated version selection (what the SDK thin client queries):**
-
-```sql
-SELECT *
-FROM rule_set_version
-WHERE rule_set_key   = @key
-  AND COALESCE(scope_manufacturer, @mfr) = @mfr
-  AND (scope_drug = @drug OR scope_drug IS NULL)
-  AND status         = 'approved'
-  AND effective_from <= @asOf
-  AND (effective_to IS NULL OR @asOf < effective_to)
-ORDER BY (scope_drug IS NULL) ASC, version DESC
-LIMIT 1;
+```text
+User → RoleAssignment → Role
 ```
 
-`asOf` is the date of service, so historical re-evaluation reproduces the exact version that was in force at the time. Zero rows means no approved version found — the SDK fails closed.
+Tenant/program scopes and `scopedRoles` have been removed. The user context returns a flat `roles` collection.
 
-**Governance flow:**
+## Projects
 
-```
-Author edits rule JSON in Bitbucket
-  -> PR + reviewers + branch protection (approval, diff, blame)
-  -> PR manifest carries effective_from / effective_to + applicability
-  -> merge
-CI/CD (Bitbucket Pipelines):
-  -> validate schema; dry-run against MS RulesEngine
-  -> POST /rules/versions  (registers immutable rule_set_version)
-  -> (optional) upload definition to S3 as execution cache
-Runtime:
-  domain -> IRulesEvaluator.Evaluate(key, scope, asOf=serviceDate, input)
-         -> SDK thin client fetches effective version (cached)
-         -> MS RulesEngine executes in-process
-         -> decision bound to version_id + commit_sha in rule_evaluation_audit
-```
-
-Rollback is forward-correcting — register a corrective version or close the bad one with `effective_to`. History is never rewritten.
-
----
-
-### 2. Aperture.PlatformServices.Config
-
-Stub only in M0. Not a runtime REST service.
-
-Config and feature flags are consumed by the SDK via AWS AppConfig and AWS Systems Manager (SSM) directly. The SDK `Aperture.Platform.Configuration.Client` package reads config in-process with a local cache. No network call to a foundation service is made on the request path.
-
-This project is reserved for a future config authoring and management UI. It must not consume its own SDK client (circular dependency).
-
----
-
-## How the SDK consumes the Rules Registry
-
-In a macroservice, the SDK is registered once:
-
-```csharp
-builder.Services.AddAperturePlatform(o =>
-{
-    o.Tenancy.Mode = TenancyMode.SingleOperator;
-    o.Persistence.EnableRowLevelSecurity = true;
-    o.Messaging.UseOutbox = true;
-    o.Security.RequireEntitlement = true;
-    o.Audit.Immutable = true;
-});
-```
-
-At rule evaluation time the domain calls:
-
-```csharp
-var result = await rulesEvaluator.Evaluate(
-    key:   "copay.benefit_caps",
-    scope: new RuleScope(manufacturerId, drugId),
-    asOf:  serviceDate,
-    input: evaluationInput,
-    ct:    cancellationToken);
-```
-
-The SDK thin client fetches the effective version from this service (with short-TTL cache), then Microsoft RulesEngine executes the definition in-process inside the domain. The decision is written to `rule_evaluation_audit` along with `rule_set_version_id` and `git_commit_sha`.
-
----
-
-## Related repositories
-
-| Repository | Purpose |
+| Project | Responsibility |
 |---|---|
-| `aperture-foundation-sdk` | Platform SDK NuGet packages (`Aperture.Platform.*`) — embedded in every macroservice |
-| `aperture-patient-identity` | Patient Identity (EMPI) service — `POST /patients/resolve`, `GET /patients/{id}` |
-| `aperture-patient-support` | Patient Support macroservice (Copay, Benefits Investigation, Prior Authorization) |
+| `Aperture.Entitlements.Contracts` | User, role, and assignment API contracts |
+| `Aperture.Entitlements.Domain` | User, role, assignment, and outbox entities |
+| `Aperture.Entitlements.Infrastructure` | PostgreSQL, Redis, and application services |
+| `Aperture.Entitlements.Api` | User context and role-administration endpoints |
+| `Aperture.Entitlements.Tests` | Domain, user resolution, and authenticated-user boundary tests |
 
----
+## Endpoints
 
-## Local development setup
+### Internal user context
 
-### Prerequisites
+These endpoints require a verified authenticated user propagated by the trusted Domain API. The Entitlements API does not evaluate roles, scopes, or action permissions.
 
-- .NET 10 SDK
-- PostgreSQL (for the Rules Registry database)
-- AWS CLI (for AppConfig / SSM in Config, when implemented)
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/entitlement/v1/users:resolve` | Resolve or create a user by normalized email |
+| GET | `/entitlement/v1/users/{userId}/context` | Return the user and flat effective role list |
 
-### Build
+Resolve request:
+
+```json
+{
+  "firstName": "Example",
+  "lastName": "User",
+  "email": "user@example.com",
+  "status": "active"
+}
+```
+
+Context response:
+
+```json
+{
+  "userId": "11111111-1111-1111-1111-111111111111",
+  "firstName": "Example",
+  "lastName": "User",
+  "email": "user@example.com",
+  "status": "active",
+  "roles": ["ClaimsSpecialist"],
+  "version": 2,
+  "eTag": "..."
+}
+```
+
+### Role administration
+
+These endpoints require only a verified authenticated user. The calling Domain API is responsible for authorizing role-administration actions before forwarding the request.
+
+```text
+GET    /entitlement/v1/roles
+POST   /entitlement/v1/roles
+GET    /entitlement/v1/roles/{roleId}
+PUT    /entitlement/v1/roles/{roleId}
+DELETE /entitlement/v1/roles/{roleId}
+
+GET    /entitlement/v1/users/{userId}/role-assignments
+POST   /entitlement/v1/users/{userId}/role-assignments
+DELETE /entitlement/v1/users/{userId}/role-assignments/{assignmentId}
+```
+
+### User administration and lookup
+
+The following endpoints are available under both `/api/users` and `/users`:
+
+| Service operation | Endpoint |
+|---|---|
+| `FindByEmailAsync` | `GET /api/users?email={email}` |
+| `FindByIdAsync` | `GET /api/users/{id}` |
+| `FindByIdsAsync` | `GET /api/users?ids={id1,id2}` |
+| `SearchIdsAsync` | `GET /api/users/search?q={text}` |
+| `AddAsync` | `POST /api/users` |
+| `UpdateAsync` | `PATCH /api/users` or `PATCH /api/users/{id}` |
+
+These endpoints require only a verified authenticated user. `SearchIdsAsync` returns at most 100 user IDs and requires at least two search characters.
+
+The following compatibility endpoint creates a role assignment through the same audited assignment service:
+
+```text
+POST /api/authorization/administration/role-assignments
+```
+
+Request:
+
+```json
+{
+  "userId": "11111111-1111-1111-1111-111111111111",
+  "roleId": "22222222-2222-2222-2222-222222222222",
+  "effectiveFrom": "2026-09-18",
+  "effectiveTo": null
+}
+```
+
+`DELETE` retires or revokes; it does not physically delete compliance history.
+
+## Authentication boundary and identity propagation
+
+The Entitlements API no longer validates JWTs and does not register an ASP.NET authentication handler. The calling Domain API must validate the token first and then replace any inbound identity headers with trusted values:
+
+| Header | Value |
+|---|---|
+| `X-Aperture-Identity-Verified` | `true` after successful Domain API authentication |
+| `X-Aperture-User-Email` | Validated caller email |
+
+`TrustedDomainIdentityMiddleware` converts the verified marker and email into an authenticated `ClaimsPrincipal`. `AuthenticatedUserMiddleware` rejects API requests with `401` unless that principal is authenticated. The Entitlements API does not validate a bearer token and does not evaluate roles, scopes, or resource/action policies.
+
+This arrangement is safe only when the Entitlements API is private and the network boundary guarantees that callers cannot forge the headers. API Gateway/ingress must remove client-supplied copies, the Domain API must set fresh values after authentication, and east-west traffic should use mTLS and network policies.
+
+## PostgreSQL
+
+Create the database and apply scripts in order:
 
 ```powershell
-dotnet build ApertureFoundation.sln
+$env:PGPASSWORD = "your-local-password"
+psql -h localhost -U postgres -c "CREATE DATABASE aperture_foundation;"
+psql -h localhost -U postgres -d aperture_foundation -f deploy/postgres/001_entitlement_schema.sql
+psql -h localhost -U postgres -d aperture_foundation -f deploy/postgres/002_database_roles.sql
+psql -h localhost -U postgres -d aperture_foundation -f deploy/postgres/003_seed_roles.sql
 ```
 
-### SDK reference
+The schema uses these tables:
 
-During local development, the SDK is referenced as a project reference via `SdkRoot` in `Directory.Build.props`. Once SDK packages are published to AWS CodeArtifact, switch to `PackageReference` and remove the local path override.
-
-The current `SdkRoot` default points to:
+```text
+entitlement.app_user
+entitlement.app_role
+entitlement.role_assignment
+entitlement.entitlement_outbox
 ```
-C:\Users\vishalkumar\aperture-foundation\aperture-foundation-sdk
+
+If upgrading an existing database containing the previous `subject`/`persona` schema, create and review a data migration instead of running this initial script over the existing database.
+
+The optional first `Admin` assignment can be created as deployment seed data so the Domain API has an initial administrative role to consume:
+
+```sql
+INSERT INTO entitlement.role_assignment
+    (user_id, role_id, effective_from, assigned_by)
+SELECT
+    :'user_id'::uuid,
+    role_id,
+    current_date,
+    :'deployment_identity'
+FROM entitlement.app_role
+WHERE role_key = 'Admin' AND status = 'active';
 ```
 
-Override it per machine without committing by setting the `SdkRoot` environment variable or adding a local `Directory.Build.props` that is git-ignored.
+After bootstrapping, manage assignments through the administration endpoints. The Domain API must authorize those calls.
 
----
+## Configuration
 
-## API conventions
+Use user-secrets locally and AWS Secrets Manager in deployed environments:
 
-All REST endpoints in this repo follow the same conventions as the domain APIs:
+```powershell
+dotnet user-secrets set "ConnectionStrings:EntitlementsDatabase" "Host=localhost;Port=5432;Database=aperture_foundation;Username=postgres;Password=..." --project src/Aperture.Entitlements.Api
+dotnet user-secrets set "ConnectionStrings:Redis" "localhost:6379,abortConnect=false" --project src/Aperture.Entitlements.Api
+```
 
-- Auth: JWT bearer token
-- Correlation: `X-Correlation-Id` header (propagated by SDK middleware)
-- Idempotency: `Idempotency-Key` header on mutations
-- Errors: RFC 7807 `application/problem+json`
-- Pagination: cursor-based
+## Build and run
 
-The full OpenAPI contract will be published as `aperture-foundation-openapi.yaml`.
+```powershell
+dotnet restore Aperture.Entitlements.sln
+dotnet build Aperture.Entitlements.sln
+dotnet test Aperture.Entitlements.sln
+dotnet run --project src/Aperture.Entitlements.Api
+```
+
+Swagger is available in Development at `https://localhost:7102/swagger`. Its **Authorize** dialog accepts the same two propagated identity headers used by the API:
+
+```text
+VerifiedIdentity: true
+UserEmail: authenticated.user@example.test
+```
+
+These development inputs simulate a trusted Domain API; they are not bearer-token validation. Swagger UI and `/health` remain reachable without identity so that users can enter the headers and orchestrators can run health probes, but calls to business endpoints require both values.
+
+Use `Aperture.Entitlements.http` for example requests.
+
+## Identity and entitlement-context flow
+
+1. The Domain API validates authentication and replaces the trusted identity headers.
+2. The Entitlements API constructs a principal from the verified marker and email.
+3. Requests without an authenticated principal receive `401`; no role/scope authorization is performed here.
+4. Effective, non-revoked roles are loaded from PostgreSQL or Redis when user context is requested.
+5. The Domain API uses that context for its own authorization decisions.
+6. Role changes increment user context version, remove the Redis entry, and append `EntitlementRevised` to the outbox.
+
+There is no authorization decision cache, Cerbos dependency, or scoped-role model in this service.

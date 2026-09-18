@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Aperture.Entitlements.Domain</RootNamespace>
+  </PropertyGroup>
+</Project>

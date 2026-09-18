@@ -1,0 +1,105 @@
+@entitlements = https://localhost:7102
+@adminEmail = admin@example.test
+@userId = 00000000-0000-0000-0000-000000000000
+@roleId = 00000000-0000-0000-0000-000000000000
+
+### Resolve or create user
+POST {{entitlements}}/entitlement/v1/users:resolve
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+Content-Type: application/json
+X-Correlation-ID: 9cc3c3f5-06c4-45dd-a600-07863f94b3d4
+
+{
+  "firstName": "Example",
+  "lastName": "User",
+  "email": "user@example.test",
+  "status": "active"
+}
+
+### Get user authorization context
+GET {{entitlements}}/entitlement/v1/users/{{userId}}/context
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+
+### List roles
+GET {{entitlements}}/entitlement/v1/roles
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+
+### Create role
+POST {{entitlements}}/entitlement/v1/roles
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+Content-Type: application/json
+
+{
+  "key": "ClaimsSpecialist",
+  "description": "Copay claims specialist"
+}
+
+### Assign role to user
+POST {{entitlements}}/entitlement/v1/users/{{userId}}/role-assignments
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+Content-Type: application/json
+
+{
+  "roleId": "{{roleId}}",
+  "effectiveFrom": "2026-09-18",
+  "effectiveTo": null
+}
+
+### Find user by email
+GET {{entitlements}}/api/users?email=user@example.test
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+
+### Find users by ids
+GET {{entitlements}}/api/users?ids={{userId}},11111111-1111-1111-1111-111111111111
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+
+### Search user ids
+GET {{entitlements}}/api/users/search?q=example
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+
+### Add user
+POST {{entitlements}}/api/users
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+Content-Type: application/json
+
+{
+  "firstName": "New",
+  "lastName": "User",
+  "email": "new.user@example.test",
+  "status": "active"
+}
+
+### Update user
+PATCH {{entitlements}}/api/users/{{userId}}
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+Content-Type: application/json
+
+{
+  "firstName": "Updated",
+  "lastName": "User",
+  "email": "updated.user@example.test",
+  "status": "active"
+}
+
+### Administration role-assignment alias
+POST {{entitlements}}/api/authorization/administration/role-assignments
+X-Aperture-Identity-Verified: true
+X-Aperture-User-Email: {{adminEmail}}
+Content-Type: application/json
+
+{
+  "userId": "{{userId}}",
+  "roleId": "{{roleId}}",
+  "effectiveFrom": "2026-09-18",
+  "effectiveTo": null
+}

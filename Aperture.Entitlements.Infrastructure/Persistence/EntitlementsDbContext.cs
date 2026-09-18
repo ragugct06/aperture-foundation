@@ -9,7 +9,6 @@ public sealed class EntitlementsDbContext(DbContextOptions<EntitlementsDbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<RoleAssignment> RoleAssignments => Set<RoleAssignment>();
-    public DbSet<EntitlementOutboxMessage> OutboxMessages => Set<EntitlementOutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,20 +56,6 @@ public sealed class EntitlementsDbContext(DbContextOptions<EntitlementsDbContext
             entity.HasOne(x => x.Role).WithMany(x => x.Assignments).HasForeignKey(x => x.RoleId);
             entity.HasIndex(x => new { x.UserId, x.RoleId, x.EffectiveFrom })
                 .HasDatabaseName("ix_role_assignment_lookup");
-        });
-
-        modelBuilder.Entity<EntitlementOutboxMessage>(entity =>
-        {
-            entity.ToTable("entitlement_outbox");
-            entity.HasKey(x => x.EventId);
-            entity.Property(x => x.EventId).HasColumnName("event_id");
-            entity.Property(x => x.EventType).HasColumnName("event_type").HasMaxLength(100);
-            entity.Property(x => x.UserId).HasColumnName("user_id");
-            entity.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
-            entity.Property(x => x.OccurredAt).HasColumnName("occurred_at");
-            entity.Property(x => x.PublishedAt).HasColumnName("published_at");
-            entity.HasIndex(x => new { x.PublishedAt, x.OccurredAt })
-                .HasDatabaseName("ix_entitlement_outbox_pending");
         });
     }
 }

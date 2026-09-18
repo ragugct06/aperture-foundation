@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace Aperture.Entitlements.Domain;
 
 public sealed class User
@@ -129,15 +132,5 @@ public sealed class EntitlementOutboxMessage
     public string PayloadJson { get; private set; } = string.Empty;
     public DateTimeOffset OccurredAt { get; private set; }
     public DateTimeOffset? PublishedAt { get; private set; }
-
-    public static EntitlementOutboxMessage Revised(Guid userId, long version, DateTimeOffset now) => new()
-    {
-        EventId = Guid.NewGuid(),
-        EventType = "EntitlementRevised",
-        UserId = userId,
-        PayloadJson = System.Text.Json.JsonSerializer.Serialize(new { userId, version }),
-        OccurredAt = now
-    };
-
     public void MarkPublished(DateTimeOffset now) => PublishedAt ??= now;
 }

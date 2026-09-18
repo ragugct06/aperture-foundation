@@ -3,6 +3,11 @@ using Aperture.Entitlements.Infrastructure.Caching;
 using Aperture.Entitlements.Infrastructure.Persistence;
 using Aperture.Entitlements.Contracts;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Threading;
+using System;
+using System.Linq;
 
 namespace Aperture.Entitlements.Infrastructure.Services;
 
@@ -97,10 +102,6 @@ public sealed class EntitlementAdministrationService(
 
         user.IncrementContextVersion();
         db.RoleAssignments.Add(entity);
-        db.OutboxMessages.Add(EntitlementOutboxMessage.Revised(
-            userId,
-            user.ContextVersion,
-            timeProvider.GetUtcNow()));
         await db.SaveChangesAsync(ct);
         await cache.RemoveAsync(userId, ct);
         return Map(entity, role.RoleKey);
@@ -120,10 +121,6 @@ public sealed class EntitlementAdministrationService(
 
         assignment.Revoke(actor, timeProvider.GetUtcNow());
         user.IncrementContextVersion();
-        db.OutboxMessages.Add(EntitlementOutboxMessage.Revised(
-            userId,
-            user.ContextVersion,
-            timeProvider.GetUtcNow()));
         await db.SaveChangesAsync(ct);
         await cache.RemoveAsync(userId, ct);
         return true;
@@ -137,10 +134,6 @@ public sealed class EntitlementAdministrationService(
         foreach (var user in users)
         {
             user.IncrementContextVersion();
-            db.OutboxMessages.Add(EntitlementOutboxMessage.Revised(
-                user.UserId,
-                user.ContextVersion,
-                timeProvider.GetUtcNow()));
             await cache.RemoveAsync(user.UserId, ct);
         }
     }

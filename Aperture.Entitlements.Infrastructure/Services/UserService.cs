@@ -5,6 +5,11 @@ using Aperture.Entitlements.Infrastructure.Caching;
 using Aperture.Entitlements.Infrastructure.Persistence;
 using Aperture.Entitlements.Contracts;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Aperture.Entitlements.Infrastructure.Services;
 
@@ -47,10 +52,6 @@ public sealed class UserService(
             if (changed)
             {
                 user.IncrementContextVersion();
-                db.OutboxMessages.Add(EntitlementOutboxMessage.Revised(
-                    user.UserId,
-                    user.ContextVersion,
-                    timeProvider.GetUtcNow()));
             }
         }
 
@@ -130,10 +131,6 @@ public sealed class UserService(
 
         user.Update(request.FirstName, request.LastName, request.Email, request.Status);
         user.IncrementContextVersion();
-        db.OutboxMessages.Add(EntitlementOutboxMessage.Revised(
-            user.UserId,
-            user.ContextVersion,
-            timeProvider.GetUtcNow()));
         await db.SaveChangesAsync(ct);
         await cache.RemoveAsync(user.UserId, ct);
         return Map(user);

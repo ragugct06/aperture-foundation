@@ -5,5 +5,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <LangVersion>14.0</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Local development: point to the aperture-foundation-sdk source tree.
+         CI resolves Aperture.Platform* from CodeArtifact instead. -->
+    <SdkRoot Condition="'$(SdkRoot)' == ''">C:\Users\vishalkumar\aperture-foundation\aperture-foundation-sdk\</SdkRoot>
   </PropertyGroup>
 </Project>

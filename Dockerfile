@@ -1,11 +1,10 @@
+# syntax=docker/dockerfile:1
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 8080
-EXPOSE 8443
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG CODEARTIFACT_TOKEN
-ENV CODEARTIFACT_TOKEN=$CODEARTIFACT_TOKEN
 WORKDIR /src
 
 COPY ["Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj", "Aperture.Entitlements.Api/"]
@@ -16,7 +15,8 @@ COPY ["Directory.Build.props", "."]
 COPY ["Directory.Packages.props", "."]
 COPY ["nuget.config", "."]
 
-RUN dotnet restore "Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj"
+RUN --mount=type=secret,id=codeartifact_token,env=CODEARTIFACT_TOKEN \
+    dotnet restore "Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj"
 
 COPY . .
 
@@ -28,6 +28,9 @@ RUN dotnet publish "Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj" 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
 
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production

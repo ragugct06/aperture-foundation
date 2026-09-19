@@ -1,0 +1,37 @@
+image: mcr.microsoft.com/dotnet/sdk:10.0
+
+definitions:
+  caches:
+    nuget: ~/.nuget/packages
+
+  steps:
+    - step: &validate
+        name: Build and Test
+        deployment: DEV
+        oidc: true
+        runs-on:
+          - self.hosted
+          - linux
+        caches:
+          - nuget
+        script:
+          - chmod +x ci/*.sh
+          - export AWS_WEB_IDENTITY_TOKEN_FILE="$(pwd)/web-identity-token"
+          - echo "${BITBUCKET_STEP_OIDC_TOKEN}" > "${AWS_WEB_IDENTITY_TOKEN_FILE}"
+          - export AWS_DEFAULT_REGION="${AWS_REGION}"
+          - aws sts get-caller-identity
+          - ./ci/install.sh
+          - ./ci/build.sh
+          - ./ci/test.sh
+
+pipelines:
+  pull-requests:
+    "**":
+      - step: *validate
+
+  branches:
+    feature/*:
+      - step: *validate
+
+    main:
+      - step: *validate

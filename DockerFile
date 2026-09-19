@@ -27,10 +27,10 @@ RUN dotnet publish "Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj" 
 
 FROM base AS final
 WORKDIR /app
+
 COPY --from=publish /app/publish .
 
-RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
-USER appuser
+USER $APP_UID
 
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production

@@ -23,8 +23,8 @@ public sealed class EntitlementsDbContext(DbContextOptions<EntitlementsDbContext
             entity.Property(x => x.LastName).HasColumnName("last_name").HasMaxLength(100);
             entity.Property(x => x.Email).HasColumnName("email").HasMaxLength(320);
             // SQL schema has no status or context_version columns
-            entity.Ignore(x => x.Status);
-            entity.Ignore(x => x.ContextVersion);
+            entity.Property(x => x.Status);
+            entity.Property(x => x.ContextVersion);
             entity.HasIndex(x => x.Email).IsUnique().HasDatabaseName("app_user_email_key");
         });
 
@@ -35,9 +35,9 @@ public sealed class EntitlementsDbContext(DbContextOptions<EntitlementsDbContext
             entity.Property(x => x.RoleId).HasColumnName("role_id");
             // SQL schema uses "name" — map RoleKey to that column; Description/Status/CreatedAt not in schema
             entity.Property(x => x.RoleKey).HasColumnName("name").HasMaxLength(100);
-            entity.Ignore(x => x.Description);
-            entity.Ignore(x => x.Status);
-            entity.Ignore(x => x.CreatedAt);
+            entity.Property(x => x.Description);
+            entity.Property(x => x.Status);
+            entity.Property(x => x.CreatedAt);
             entity.HasIndex(x => x.RoleKey).IsUnique().HasDatabaseName("role_name_key");
         });
 
@@ -49,12 +49,12 @@ public sealed class EntitlementsDbContext(DbContextOptions<EntitlementsDbContext
             entity.Property(x => x.UserId).HasColumnName("user_id");
             entity.Property(x => x.RoleId).HasColumnName("role_id");
             // SQL schema has only assignment_id, user_id, role_id
-            entity.Ignore(x => x.EffectiveFrom);
-            entity.Ignore(x => x.EffectiveTo);
-            entity.Ignore(x => x.AssignedBy);
-            entity.Ignore(x => x.AssignedAt);
-            entity.Ignore(x => x.RevokedAt);
-            entity.Ignore(x => x.RevokedBy);
+            entity.Property(x => x.EffectiveFrom);
+            entity.Property(x => x.EffectiveTo);
+            entity.Property(x => x.AssignedBy);
+            entity.Property(x => x.AssignedAt);
+            entity.Property(x => x.RevokedAt);
+            entity.Property(x => x.RevokedBy);
             entity.HasOne(x => x.User).WithMany(x => x.Assignments).HasForeignKey(x => x.UserId);
             entity.HasOne(x => x.Role).WithMany(x => x.Assignments).HasForeignKey(x => x.RoleId);
             entity.HasIndex(x => new { x.UserId, x.RoleId }).HasDatabaseName("idx_role_assignment_user");

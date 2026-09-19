@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aperture.Entitlements.Api.Controllers;
 
 [ApiController]
-[Route("entitlements/users")]
+[Route("api/users")]
 public sealed class UserAdministrationController(IUserService users) : ControllerBase
 {
     [HttpGet]

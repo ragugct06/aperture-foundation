@@ -75,7 +75,7 @@ public sealed class EntitlementAdministrationService(
         var values = await db.RoleAssignments.AsNoTracking()
             .Include(x => x.Role)
             .Where(x => x.UserId == userId)
-            .OrderByDescending(x => x.AssignedAt)
+            .OrderBy(x => x.AssignmentId)
             .ToArrayAsync(ct);
         return values.Select(x => Map(x)).ToArray();
     }
@@ -90,8 +90,8 @@ public sealed class EntitlementAdministrationService(
         var user = await db.Users.SingleOrDefaultAsync(x => x.UserId == userId, ct)
             ?? throw new KeyNotFoundException("User was not found.");
         var role = await db.Roles.SingleOrDefaultAsync(
-            x => x.RoleId == request.RoleId && x.Status == "active",
-            ct) ?? throw new KeyNotFoundException("Active role was not found.");
+            x => x.RoleId == request.RoleId,
+            ct) ?? throw new KeyNotFoundException("Role was not found.");
         var entity = RoleAssignment.Create(
             userId,
             request.RoleId,
@@ -129,7 +129,7 @@ public sealed class EntitlementAdministrationService(
     private async Task TouchAssignedUsersAsync(Guid roleId, CancellationToken ct)
     {
         var users = await db.Users
-            .Where(x => x.Assignments.Any(a => a.RoleId == roleId && a.RevokedAt == null))
+            .Where(x => x.Assignments.Any(a => a.RoleId == roleId))
             .ToListAsync(ct);
         foreach (var user in users)
         {

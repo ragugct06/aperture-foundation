@@ -8,7 +8,7 @@ if (!builder.Environment.IsDevelopment()) EnsureNoPlaceholders(builder.Configura
 builder.Services.Configure<TrustedDomainIdentityOptions>(
     builder.Configuration.GetSection("TrustedDomainIdentity"));
 
-builder.Services.AddEntitlementsInfrastructure(builder.Configuration);
+builder.Services.AddEntitlementsInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddControllers();
 builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();

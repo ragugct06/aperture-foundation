@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: entitlement
+  namespace: foundation
+spec:
+  type: ClusterIP
+  selector:
+    app: aperture-entitlements
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aperture-entitlements
+  namespace: foundation
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aperture-entitlements
+  template:
+    metadata:
+      labels:
+        app: aperture-entitlements
+    spec:
+      serviceAccountName: aperture-entitlements
+      containers:
+        - name: api
+          image: REPLACE_ECR/aperture-entitlements:REPLACE_TAG
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: aperture-entitlements-runtime
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: entitlements-internal-callers
+  namespace: foundation
+spec:
+  podSelector:
+    matchLabels:
+      app: aperture-entitlements
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              aperture.network/internal-client: "true"
+      ports:
+        - protocol: TCP
+          port: 8080

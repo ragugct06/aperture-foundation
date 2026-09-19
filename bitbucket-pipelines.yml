@@ -1,0 +1,76 @@
+image: mcr.microsoft.com/dotnet/sdk:10.0
+
+definitions:
+  caches:
+    nuget: ~/.nuget/packages
+
+  steps:
+    # ------------------------------------------------------------
+    # Pull Request Validation
+    # Only PRs targeting main are validated
+    # ------------------------------------------------------------
+    - step: &validate
+        name: Validate Foundation
+        deployment: DEV
+        oidc: true
+        runs-on:
+          - self.hosted
+          - linux
+        caches:
+          - nuget
+        script:
+          - |
+            if [ "${BITBUCKET_PR_DESTINATION_BRANCH:-}" != "main" ]; then
+              echo "PR is not targeting main. Skipping validation."
+              exit 0
+            fi
+
+          - chmod +x ci/*.sh
+          - source ci/aws-auth.sh
+          - source ci/restore.sh
+          - ./ci/build.sh
+          - ./ci/test.sh
+
+    # ------------------------------------------------------------
+    # Main Branch - Build, Scan, Publish and Deploy
+    # ------------------------------------------------------------
+    - step: &build-scan-publish-deploy
+        name: Build, Scan, Publish and Deploy
+        deployment: DEV
+        oidc: true
+        runs-on:
+          - self.hosted
+          - linux
+        caches:
+          - nuget
+        services:
+          - docker
+        script:
+          - chmod +x ci/*.sh
+
+          # AWS + CodeArtifact
+          - source ci/aws-auth.sh
+          - source ci/restore.sh
+
+          # Application validation
+          - ./ci/build.sh
+          - ./ci/test.sh
+
+          # Container build and security scan
+          - source ci/docker-build.sh
+          - ./ci/image-scan.sh
+
+          # Publish immutable image
+          - ./ci/ecr-push.sh
+
+          # Update DEV GitOps image tag
+          - ./ci/gitops-update.sh
+
+pipelines:
+  pull-requests:
+    "**":
+      - step: *validate
+
+  branches:
+    main:
+      - step: *build-scan-publish-deploy

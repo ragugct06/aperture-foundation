@@ -11,23 +11,34 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddEntitlementsInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        bool isDevelopment = false)
     {
         var connection = configuration.GetConnectionString("EntitlementsDatabase")
             ?? throw new InvalidOperationException(
                 "ConnectionStrings:EntitlementsDatabase is required.");
-        var redis = configuration.GetConnectionString("Redis")
-            ?? throw new InvalidOperationException("ConnectionStrings:Redis is required.");
 
         services.AddDbContext<EntitlementsDbContext>(options =>
             options.UseNpgsql(connection, npgsql => npgsql.MigrationsHistoryTable(
                 "__EFMigrationsHistory",
                 "entitlement")));
-        services.AddStackExchangeRedisCache(options =>
+
+        if (isDevelopment)
         {
-            options.Configuration = redis;
-            options.InstanceName = "Aperture:Entitlements:";
-        });
+            // No Redis in local dev — use in-memory distributed cache instead.
+            services.AddDistributedMemoryCache();
+        }
+        else
+        {
+            var redis = configuration.GetConnectionString("Redis")
+                ?? throw new InvalidOperationException("ConnectionStrings:Redis is required.");
+            services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = redis;
+                options.InstanceName = "Aperture:Entitlements:";
+            });
+        }
+
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IUserContextCache, UserContextCache>();
         services.AddScoped<IUserService, UserService>();

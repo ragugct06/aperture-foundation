@@ -29,8 +29,7 @@ public interface IUserService
 
 public sealed class UserService(
     EntitlementsDbContext db,
-    IUserContextCache cache,
-    TimeProvider timeProvider) : IUserService
+    IUserContextCache cache) : IUserService
 {
     public async Task<ResolveUserResponse> ResolveAsync(ResolveUserRequest request, CancellationToken ct)
     {
@@ -141,16 +140,11 @@ public sealed class UserService(
         var cached = await cache.GetAsync(userId, ct);
         if (cached is not null) return cached;
 
-        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
         var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, ct);
         if (user is null) return null;
 
         var roles = await db.RoleAssignments.AsNoTracking()
-            .Where(x => x.UserId == userId &&
-                        x.Role.Status == "active" &&
-                        x.RevokedAt == null &&
-                        x.EffectiveFrom <= today &&
-                        (x.EffectiveTo == null || today < x.EffectiveTo))
+            .Where(x => x.UserId == userId)
             .Select(x => x.Role.RoleKey)
             .Distinct()
             .OrderBy(x => x)

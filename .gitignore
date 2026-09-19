@@ -47,4 +47,3 @@ publish/
 *.suo
 *.code-workspace
 .history/
-DockerFile

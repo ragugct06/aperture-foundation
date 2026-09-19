@@ -6,7 +6,7 @@ definitions:
 
   steps:
     - step: &validate
-        name: Build and Test
+        name: Validate Foundation
         deployment: DEV
         oidc: true
         runs-on:
@@ -16,11 +16,8 @@ definitions:
           - nuget
         script:
           - chmod +x ci/*.sh
-          - export AWS_WEB_IDENTITY_TOKEN_FILE="$(pwd)/web-identity-token"
-          - echo "${BITBUCKET_STEP_OIDC_TOKEN}" > "${AWS_WEB_IDENTITY_TOKEN_FILE}"
-          - export AWS_DEFAULT_REGION="${AWS_REGION}"
-          - aws sts get-caller-identity
-          - ./ci/install.sh
+          - source ci/aws-auth.sh
+          - ./ci/restore.sh
           - ./ci/build.sh
           - ./ci/test.sh
 

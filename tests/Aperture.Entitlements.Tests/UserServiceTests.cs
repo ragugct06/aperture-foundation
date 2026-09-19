@@ -14,8 +14,7 @@ public sealed class UserServiceTests
         await using var db = CreateDatabase();
         var service = new UserService(
             db,
-            new TestUserContextCache(),
-            new FixedTimeProvider(new DateTimeOffset(2026, 9, 18, 12, 0, 0, TimeSpan.Zero)));
+            new TestUserContextCache());
         var request = new ResolveUserRequest
         {
             FirstName = "Test",
@@ -39,8 +38,7 @@ public sealed class UserServiceTests
         await using var db = CreateDatabase();
         var service = new UserService(
             db,
-            new TestUserContextCache(),
-            new FixedTimeProvider(new DateTimeOffset(2026, 9, 18, 12, 0, 0, TimeSpan.Zero)));
+            new TestUserContextCache());
         var resolved = await service.ResolveAsync(new ResolveUserRequest
         {
             FirstName = "Test",
@@ -63,8 +61,7 @@ public sealed class UserServiceTests
         await using var db = CreateDatabase();
         var service = new UserService(
             db,
-            new TestUserContextCache(),
-            new FixedTimeProvider(new DateTimeOffset(2026, 9, 18, 12, 0, 0, TimeSpan.Zero)));
+            new TestUserContextCache());
         var added = await service.AddAsync(new AddUserRequest
         {
             FirstName = "First",

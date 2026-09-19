@@ -5,6 +5,9 @@ definitions:
     nuget: ~/.nuget/packages
 
   steps:
+    # ------------------------------------------------------------
+    # Feature branches / Pull Requests
+    # ------------------------------------------------------------
     - step: &validate
         name: Validate Foundation
         deployment: DEV
@@ -16,10 +19,49 @@ definitions:
           - nuget
         script:
           - chmod +x ci/*.sh
+
+          # AWS OIDC authentication
           - source ci/aws-auth.sh
-          - ./ci/restore.sh
+
+          # CodeArtifact + NuGet restore
+          # source is intentional so CODEARTIFACT_TOKEN remains available
+          - source ci/restore.sh
+
+          # Build and tests
           - ./ci/build.sh
           - ./ci/test.sh
+
+    # ------------------------------------------------------------
+    # Main branch - Build, Scan and Publish to DEV ECR
+    # ------------------------------------------------------------
+    - step: &build-scan-publish
+        name: Build, Test, Scan and Publish Image
+        deployment: DEV
+        oidc: true
+        runs-on:
+          - self.hosted
+          - linux
+        caches:
+          - nuget
+        services:
+          - docker
+        script:
+          - chmod +x ci/*.sh
+
+          # AWS OIDC authentication
+          - source ci/aws-auth.sh
+
+          # CodeArtifact authentication + NuGet restore
+          - source ci/restore.sh
+
+          # Application validation
+          - ./ci/build.sh
+          - ./ci/test.sh
+
+          # Container
+          - source ci/docker-build.sh
+          - ./ci/image-scan.sh
+          - ./ci/ecr-push.sh
 
 pipelines:
   pull-requests:
@@ -29,6 +71,7 @@ pipelines:
   branches:
     feature/*:
       - step: *validate
+      - step: *build-scan-publish
 
     main:
-      - step: *validate
+      - step: *build-scan-publish

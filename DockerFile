@@ -27,10 +27,9 @@ RUN dotnet publish "Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj" 
 
 FROM base AS final
 WORKDIR /app
-
 COPY --from=publish /app/publish .
 
-USER $APP_UID
+USER app
 
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production

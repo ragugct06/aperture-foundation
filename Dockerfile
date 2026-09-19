@@ -1,39 +1,13 @@
-# syntax=docker/dockerfile:1
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
-WORKDIR /app
-EXPOSE 8080
-
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-ARG CODEARTIFACT_TOKEN
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-
-COPY ["Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj", "Aperture.Entitlements.Api/"]
-COPY ["Aperture.Entitlements.Contracts/Aperture.Entitlements.Contracts.csproj", "Aperture.Entitlements.Contracts/"]
-COPY ["Aperture.Entitlements.Domain/Aperture.Entitlements.Domain.csproj", "Aperture.Entitlements.Domain/"]
-COPY ["Aperture.Entitlements.Infrastructure/Aperture.Entitlements.Infrastructure.csproj", "Aperture.Entitlements.Infrastructure/"]
-COPY ["Directory.Build.props", "."]
-COPY ["Directory.Packages.props", "."]
-COPY ["nuget.config", "."]
-
-RUN --mount=type=secret,id=codeartifact_token,env=CODEARTIFACT_TOKEN \
-    dotnet restore "Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj"
-
 COPY . .
+RUN dotnet publish src/Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj \
+    --configuration Release --output /app --no-self-contained
 
-RUN dotnet build "Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj" -c Release --no-restore -o /app/build
-
-FROM build AS publish
-RUN dotnet publish "Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj" -c Release --no-restore -o /app/publish /p:UseAppHost=false
-
-FROM base AS final
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
-COPY --from=publish /app/publish .
-
-RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
-USER appuser
-
-ENV ASPNETCORE_URLS=http://+:8080
-ENV ASPNETCORE_ENVIRONMENT=Production
-ENV DOTNET_RUNNING_IN_CONTAINER=true
-
+COPY --from=build /app .
+USER $APP_UID
+ENV ASPNETCORE_HTTP_PORTS=8080
+EXPOSE 8080
 ENTRYPOINT ["dotnet", "Aperture.Entitlements.Api.dll"]

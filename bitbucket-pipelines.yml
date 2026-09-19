@@ -37,6 +37,9 @@ definitions:
 
           # Push to ECR
           - ./ci/ecr-push.sh
+          
+          # Update DEV GitOps image tag
+          - ./ci/gitops-update.sh
 
 pipelines:
   branches:

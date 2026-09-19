@@ -12,7 +12,7 @@ echo "Image tag: ${IMAGE_TAG}"
 docker build \
   --secret id=codeartifact_token,env=CODEARTIFACT_TOKEN \
   -t "${LOCAL_IMAGE}" \
-  -f Dockerfile \
+  -f DockerFile \
   .
 
 export IMAGE_TAG

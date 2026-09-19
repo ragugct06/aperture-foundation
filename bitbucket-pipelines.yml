@@ -6,7 +6,7 @@ definitions:
 
   steps:
     # ------------------------------------------------------------
-    # Feature branches / Pull Requests
+    # Pull Request Validation
     # ------------------------------------------------------------
     - step: &validate
         name: Validate Foundation
@@ -23,8 +23,7 @@ definitions:
           # AWS OIDC authentication
           - source ci/aws-auth.sh
 
-          # CodeArtifact + NuGet restore
-          # source is intentional so CODEARTIFACT_TOKEN remains available
+          # CodeArtifact authentication + NuGet restore
           - source ci/restore.sh
 
           # Build and tests
@@ -32,7 +31,7 @@ definitions:
           - ./ci/test.sh
 
     # ------------------------------------------------------------
-    # Main branch - Build, Scan and Publish to DEV ECR
+    # Build, Scan and Publish Docker Image
     # ------------------------------------------------------------
     - step: &build-scan-publish
         name: Build, Test, Scan and Publish Image
@@ -54,13 +53,17 @@ definitions:
           # CodeArtifact authentication + NuGet restore
           - source ci/restore.sh
 
-          # Application validation
+          # Build and tests
           - ./ci/build.sh
           - ./ci/test.sh
 
-          # Container
+          # Docker build
           - source ci/docker-build.sh
+
+          # Image security scan
           - ./ci/image-scan.sh
+
+          # Push image to ECR
           - ./ci/ecr-push.sh
 
 pipelines:

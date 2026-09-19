@@ -10,6 +10,6 @@ echo "=== Running Entitlements tests ==="
 
 dotnet test \
   tests/Aperture.Entitlements.Tests/Aperture.Entitlements.Tests.csproj \
-  -c Release || true
+  -c Release
 
 echo "WARNING: Test failures are temporarily non-blocking."

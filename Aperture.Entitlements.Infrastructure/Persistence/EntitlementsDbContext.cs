@@ -22,23 +22,21 @@ public sealed class EntitlementsDbContext(DbContextOptions<EntitlementsDbContext
             entity.Property(x => x.FirstName).HasColumnName("first_name").HasMaxLength(100);
             entity.Property(x => x.LastName).HasColumnName("last_name").HasMaxLength(100);
             entity.Property(x => x.Email).HasColumnName("email").HasMaxLength(320);
-            // SQL schema has no status or context_version columns
-            entity.Property(x => x.Status);
-            entity.Property(x => x.ContextVersion);
-            entity.HasIndex(x => x.Email).IsUnique().HasDatabaseName("app_user_email_key");
+            entity.Property(x => x.Status).HasColumnName("status").HasMaxLength(20);
+            entity.Property(x => x.ContextVersion).HasColumnName("context_version");
+            entity.HasIndex(x => x.Email).IsUnique().HasDatabaseName("uq_app_user_email");
         });
 
         modelBuilder.Entity<Role>(entity =>
         {
-            entity.ToTable("role");
+            entity.ToTable("app_role");
             entity.HasKey(x => x.RoleId);
             entity.Property(x => x.RoleId).HasColumnName("role_id");
-            // SQL schema uses "name" — map RoleKey to that column; Description/Status/CreatedAt not in schema
-            entity.Property(x => x.RoleKey).HasColumnName("name").HasMaxLength(100);
-            entity.Property(x => x.Description);
-            entity.Property(x => x.Status);
-            entity.Property(x => x.CreatedAt);
-            entity.HasIndex(x => x.RoleKey).IsUnique().HasDatabaseName("role_name_key");
+            entity.Property(x => x.RoleKey).HasColumnName("role_key").HasMaxLength(100);
+            entity.Property(x => x.Description).HasColumnName("description");
+            entity.Property(x => x.Status).HasColumnName("status").HasMaxLength(20);
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.HasIndex(x => x.RoleKey).IsUnique().HasDatabaseName("uq_app_role_key");
         });
 
         modelBuilder.Entity<RoleAssignment>(entity =>
@@ -48,16 +46,15 @@ public sealed class EntitlementsDbContext(DbContextOptions<EntitlementsDbContext
             entity.Property(x => x.AssignmentId).HasColumnName("assignment_id");
             entity.Property(x => x.UserId).HasColumnName("user_id");
             entity.Property(x => x.RoleId).HasColumnName("role_id");
-            // SQL schema has only assignment_id, user_id, role_id
-            entity.Property(x => x.EffectiveFrom);
-            entity.Property(x => x.EffectiveTo);
-            entity.Property(x => x.AssignedBy);
-            entity.Property(x => x.AssignedAt);
-            entity.Property(x => x.RevokedAt);
-            entity.Property(x => x.RevokedBy);
+            entity.Property(x => x.EffectiveFrom).HasColumnName("effective_from");
+            entity.Property(x => x.EffectiveTo).HasColumnName("effective_to");
+            entity.Property(x => x.AssignedBy).HasColumnName("assigned_by");
+            entity.Property(x => x.AssignedAt).HasColumnName("assigned_at");
+            entity.Property(x => x.RevokedAt).HasColumnName("revoked_at");
+            entity.Property(x => x.RevokedBy).HasColumnName("revoked_by");
             entity.HasOne(x => x.User).WithMany(x => x.Assignments).HasForeignKey(x => x.UserId);
             entity.HasOne(x => x.Role).WithMany(x => x.Assignments).HasForeignKey(x => x.RoleId);
-            entity.HasIndex(x => new { x.UserId, x.RoleId }).HasDatabaseName("idx_role_assignment_user");
+            entity.HasIndex(x => new { x.UserId, x.RoleId, x.EffectiveFrom }).HasDatabaseName("ix_role_assignment_lookup");
         });
     }
 }

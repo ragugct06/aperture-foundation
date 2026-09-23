@@ -1,5 +1,6 @@
 using Aperture.Entitlements.Api.Middleware;
 using Aperture.Entitlements.Infrastructure.Services;
+using Aperture.Entitlements.Api.Auth;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,6 +8,13 @@ if (!builder.Environment.IsDevelopment()) EnsureNoPlaceholders(builder.Configura
 
 builder.Services.Configure<TrustedDomainIdentityOptions>(
     builder.Configuration.GetSection("TrustedDomainIdentity"));
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services
+        .AddAuthentication("DevAuth")
+        .AddScheme<DevAuthOptions, DevAuthHandler>("DevAuth", _ => { });
+}
 
 builder.Services.AddEntitlementsInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddControllers();
@@ -39,6 +47,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+app.UseCors();
 app.UseMiddleware<CorrelationMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseMiddleware<TrustedDomainIdentityMiddleware>();

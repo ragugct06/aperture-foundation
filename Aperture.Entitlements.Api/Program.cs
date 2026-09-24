@@ -9,12 +9,12 @@ if (!builder.Environment.IsDevelopment()) EnsureNoPlaceholders(builder.Configura
 builder.Services.Configure<TrustedDomainIdentityOptions>(
     builder.Configuration.GetSection("TrustedDomainIdentity"));
 
-if (builder.Environment.IsDevelopment())
-{
+// if (builder.Environment.IsDevelopment())
+// {
     builder.Services
         .AddAuthentication("DevAuth")
         .AddScheme<DevAuthOptions, DevAuthHandler>("DevAuth", _ => { });
-}
+// }
 
 builder.Services.AddEntitlementsInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddControllers();

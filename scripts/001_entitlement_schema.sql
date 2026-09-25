@@ -1,3 +1,19 @@
+-- Run with psql connected to an existing database (for example, -d postgres).
+-- Override the target with -v database_name=your_database.
+-- Requires CREATEDB permission when the target database does not exist.
+-- Do not use --single-transaction: CREATE DATABASE must run outside a transaction.
+\set ON_ERROR_STOP on
+\if :{?database_name}
+\else
+\set database_name aperture_entitlement_dev;
+\endif
+
+SELECT format('CREATE DATABASE %I', :'database_name')
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'database_name')
+\gexec
+
+\connect :database_name
+
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;

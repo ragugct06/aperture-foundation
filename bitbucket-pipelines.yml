@@ -1,23 +1,33 @@
 image: mcr.microsoft.com/dotnet/sdk:10.0
 
+options:
+  max-time: 45
+  size: 2x
+
 definitions:
   caches:
     nuget: ~/.nuget/packages
 
+  services:
+    docker:
+      memory: 3072
+
   steps:
-    # ------------------------------------------------------------
-    # Pull Request Validation
-    # Only PRs targeting main are validated
-    # ------------------------------------------------------------
-    - step: &validate
-        name: Validate Foundation
-        deployment: DEV
+    - step: &ci-validation
+        name: CI Validation
         oidc: true
+        deployment: DEV
+
         runs-on:
           - self.hosted
           - linux
+
+        services:
+          - docker
+
         caches:
           - nuget
+
         script:
           - |
             if [ "${BITBUCKET_PR_DESTINATION_BRANCH:-}" != "main" ]; then
@@ -25,52 +35,76 @@ definitions:
               exit 0
             fi
 
-          - chmod +x ci/*.sh
-          - source ci/aws-auth.sh
-          - source ci/restore.sh
-          - ./ci/build.sh
-          - ./ci/test.sh
+          - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
+          - ./ci/common/ci.sh
 
-    # ------------------------------------------------------------
-    # Main Branch - Build, Scan, Publish and Deploy
-    # ------------------------------------------------------------
-    - step: &build-scan-publish-deploy
-        name: Build, Scan, Publish and Deploy
-        deployment: DEV
+        artifacts:
+          - TestResults/**
+          - reports/**
+
+    - step: &dev-deploy
+        name: Build, Scan and Deploy DEV
         oidc: true
+        deployment: DEV
+
         runs-on:
           - self.hosted
           - linux
-        caches:
-          - nuget
+
         services:
           - docker
+
+        caches:
+          - nuget
+
         script:
-          - chmod +x ci/*.sh
+          - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
 
-          # AWS + CodeArtifact
-          - source ci/aws-auth.sh
-          - source ci/restore.sh
+          - ./ci/common/ci.sh
+          - ./ci/ecr/publish-dev.sh
 
-          # Application validation
-          - ./ci/build.sh
-          - ./ci/test.sh
+          - ./ci/gitops/update-environment.sh \
+              dev \
+              aperture-foundation \
+              reports/image-metadata.env
 
-          # Container build and security scan
-          - source ci/docker-build.sh
-          - ./ci/image-scan.sh
-
-          # Publish immutable image
-          - ./ci/ecr-push.sh
-
-          # Update DEV GitOps image tag
-          - ./ci/gitops-update.sh
+        artifacts:
+          - TestResults/**
+          - reports/**
 
 pipelines:
   pull-requests:
-    "**":
-      - step: *validate
+    '**':
+      - step: *ci-validation
 
   branches:
     main:
-      - step: *build-scan-publish-deploy
+      - step: *dev-deploy
+
+  custom:
+    promote-to-qa:
+      - variables:
+          - name: RELEASE_VERSION
+            description: "Semantic release version, for example 1.0.0"
+
+      - step:
+          name: Promote DEV Release to QA
+          oidc: true
+          deployment: QA
+
+          runs-on:
+            - self.hosted
+            - linux
+
+          services:
+            - docker
+
+          script:
+            - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
+
+            - ./ci/common/install-tools.sh
+            - source ./ci/common/aws-auth.sh
+            - ./ci/release/promote-qa.sh
+
+          artifacts:
+            - reports/**

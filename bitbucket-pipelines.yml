@@ -63,10 +63,7 @@ definitions:
           - source ./ci/common/ci.sh
           - ./ci/ecr/publish-dev.sh
 
-          - ./ci/gitops/update-environment.sh \
-              dev \
-              aperture-foundation \
-              reports/image-metadata.env
+          - ./ci/gitops/update-environment.sh dev aperture-foundation reports/image-metadata.env
 
         artifacts:
           - TestResults/**

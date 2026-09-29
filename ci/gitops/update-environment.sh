@@ -6,8 +6,8 @@ SERVICE_NAME="${2:?service name is required}"
 METADATA_FILE="${3:?metadata file is required}"
 
 : "${GITOPS_ACCESS_TOKEN:?GITOPS_ACCESS_TOKEN is required}"
-
-GITOPS_APPROVER_TOKEN="${GITOPS_APPROVER_TOKEN:-${GITOPS_ACCESS_TOKEN}}"
+: "${GITOPS_APPROVER_EMAIL:?GITOPS_APPROVER_EMAIL is required}"
+: "${GITOPS_APPROVER_TOKEN:?GITOPS_APPROVER_TOKEN is required}"
 
 if [[ ! -f "${METADATA_FILE}" ]]; then
   echo "ERROR: Metadata file not found: ${METADATA_FILE}"
@@ -50,6 +50,7 @@ echo "Environment: ${DEPLOY_ENV}"
 echo "Release:     ${RELEASE_TAG}"
 echo "Commit:      ${SOURCE_COMMIT}"
 echo "Digest:      ${IMAGE_DIGEST}"
+echo "Branch:      ${DEPLOY_BRANCH}"
 
 git clone \
   --quiet \
@@ -67,9 +68,13 @@ fi
 git config user.name "Aperture CI"
 git config user.email "aperture-ci@users.noreply.bitbucket.org"
 
-git checkout -B "${DEPLOY_BRANCH}" "origin/${GITOPS_BASE_BRANCH}"
+git checkout -B \
+  "${DEPLOY_BRANCH}" \
+  "origin/${GITOPS_BASE_BRANCH}"
 
 if ! command -v yq >/dev/null 2>&1; then
+  echo "Installing yq..."
+
   YQ_VERSION="v4.47.2"
 
   curl -fsSL \
@@ -79,7 +84,15 @@ if ! command -v yq >/dev/null 2>&1; then
   chmod +x /usr/local/bin/yq
 fi
 
-export RELEASE_TAG SOURCE_COMMIT IMAGE_REPOSITORY IMAGE_DIGEST
+export RELEASE_TAG
+export SOURCE_COMMIT
+export IMAGE_REPOSITORY
+export IMAGE_DIGEST
+
+echo
+echo "========================================="
+echo " Updating GitOps values"
+echo "========================================="
 
 yq -i '
   .release.version = strenv(RELEASE_TAG) |
@@ -94,12 +107,32 @@ if git diff --quiet -- "${VALUES_FILE}"; then
   exit 0
 fi
 
+echo
+echo "========================================="
+echo " GitOps change"
+echo "========================================="
+
+git diff -- "${VALUES_FILE}"
+
 git add "${VALUES_FILE}"
 
 git commit \
   -m "deploy(${SERVICE_NAME}): ${DEPLOY_ENV} ${RELEASE_TAG} [skip ci]"
 
-git push --force-with-lease origin "${DEPLOY_BRANCH}"
+echo
+echo "========================================="
+echo " Pushing deployment branch"
+echo "========================================="
+
+git push \
+  --force-with-lease \
+  origin \
+  "${DEPLOY_BRANCH}"
+
+echo
+echo "========================================="
+echo " Creating GitOps pull request"
+echo "========================================="
 
 PR_TITLE="deploy(${SERVICE_NAME}): ${DEPLOY_ENV} ${RELEASE_TAG}"
 
@@ -139,55 +172,88 @@ HTTP_CODE="$(
 
 if [[ "${HTTP_CODE}" != "201" ]]; then
   echo "ERROR: Failed to create GitOps PR."
+  echo "HTTP status: ${HTTP_CODE}"
   cat "${PR_RESPONSE}"
   exit 1
 fi
 
-PR_ID="$(jq -r '.id' "${PR_RESPONSE}")"
+PR_ID="$(
+  jq -r '.id' "${PR_RESPONSE}"
+)"
 
 if [[ -z "${PR_ID}" || "${PR_ID}" == "null" ]]; then
   echo "ERROR: Unable to determine GitOps PR ID."
+  cat "${PR_RESPONSE}"
   exit 1
 fi
 
 echo "Created GitOps PR: ${PR_ID}"
 
+echo
+echo "========================================="
+echo " Approving GitOps pull request"
+echo "========================================="
+
+APPROVE_RESPONSE="/tmp/gitops-pr-approve-response.json"
+
 APPROVE_CODE="$(
   curl \
     --silent \
     --show-error \
-    --output /tmp/gitops-pr-approve-response.json \
+    --output "${APPROVE_RESPONSE}" \
     --write-out "%{http_code}" \
-    --request PUT \
-    --header "Authorization: Bearer ${GITOPS_APPROVER_TOKEN}" \
+    --request POST \
+    --user "${GITOPS_APPROVER_EMAIL}:${GITOPS_APPROVER_TOKEN}" \
+    --header "Accept: application/json" \
     "https://api.bitbucket.org/2.0/repositories/${GITOPS_WORKSPACE}/${GITOPS_REPO}/pullrequests/${PR_ID}/approve"
 )"
 
 if [[ "${APPROVE_CODE}" != "200" ]]; then
   echo "ERROR: Failed to approve GitOps PR."
-  cat /tmp/gitops-pr-approve-response.json
+  echo "HTTP status: ${APPROVE_CODE}"
+  cat "${APPROVE_RESPONSE}"
   exit 1
 fi
 
 echo "GitOps PR approved."
 
+echo
+echo "========================================="
+echo " Merging GitOps pull request"
+echo "========================================="
+
+MERGE_RESPONSE="/tmp/gitops-pr-merge-response.json"
+
 MERGE_CODE="$(
   curl \
     --silent \
     --show-error \
-    --output /tmp/gitops-pr-merge-response.json \
+    --output "${MERGE_RESPONSE}" \
     --write-out "%{http_code}" \
     --request POST \
-    --header "Authorization: Bearer ${GITOPS_APPROVER_TOKEN}" \
+    --user "${GITOPS_APPROVER_EMAIL}:${GITOPS_APPROVER_TOKEN}" \
     --header "Content-Type: application/json" \
+    --header "Accept: application/json" \
     --data '{"close_source_branch": true}' \
     "https://api.bitbucket.org/2.0/repositories/${GITOPS_WORKSPACE}/${GITOPS_REPO}/pullrequests/${PR_ID}/merge"
 )"
 
 if [[ "${MERGE_CODE}" != "200" ]]; then
   echo "ERROR: Failed to merge GitOps PR."
-  cat /tmp/gitops-pr-merge-response.json
+  echo "HTTP status: ${MERGE_CODE}"
+  cat "${MERGE_RESPONSE}"
   exit 1
 fi
 
-echo "GitOps PR approved and merged successfully."
+echo
+echo "========================================="
+echo " GitOps deployment completed"
+echo "========================================="
+echo "PR:          ${PR_ID}"
+echo "Service:     ${SERVICE_NAME}"
+echo "Environment: ${DEPLOY_ENV}"
+echo "Release:     ${RELEASE_TAG}"
+echo "Commit:      ${SOURCE_COMMIT}"
+echo "Digest:      ${IMAGE_DIGEST}"
+echo
+echo "GitOps PR created, approved and merged successfully."

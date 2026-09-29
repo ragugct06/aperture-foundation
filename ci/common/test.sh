@@ -7,6 +7,7 @@ echo "=== Running Foundation tests ==="
 
 dotnet test "${TEST_PROJECT}" \
   --configuration Release \
+  --no-build \
   --no-restore
 
 echo "Tests completed successfully."

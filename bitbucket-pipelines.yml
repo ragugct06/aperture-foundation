@@ -36,7 +36,7 @@ definitions:
             fi
 
           - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
-          - ./ci/common/ci.sh
+          - source ./ci/common/ci.sh
 
         artifacts:
           - TestResults/**
@@ -60,7 +60,7 @@ definitions:
         script:
           - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
 
-          - ./ci/common/ci.sh
+          - source ./ci/common/ci.sh
           - ./ci/ecr/publish-dev.sh
 
           - ./ci/gitops/update-environment.sh \

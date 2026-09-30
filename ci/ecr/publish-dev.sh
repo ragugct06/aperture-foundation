@@ -37,6 +37,7 @@ set +e
 
 EXISTING_DIGEST="$(
   aws ecr describe-images \
+    --registry-id "${AWS_ACCOUNT_ID}" \
     --repository-name "${ECR_REPOSITORY}" \
     --region "${AWS_REGION}" \
     --image-ids imageTag="${IMAGE_TAG}" \
@@ -74,6 +75,7 @@ fi
 
 IMAGE_DIGEST="$(
   aws ecr describe-images \
+    --registry-id "${AWS_ACCOUNT_ID}" \
     --repository-name "${ECR_REPOSITORY}" \
     --region "${AWS_REGION}" \
     --image-ids imageTag="${IMAGE_TAG}" \
@@ -95,5 +97,6 @@ METADATA
 
 echo
 echo "DEV image published successfully."
+echo "Repository: ${ECR_REPOSITORY_URI}"
 echo "Commit: ${BITBUCKET_COMMIT}"
 echo "Digest: ${IMAGE_DIGEST}"

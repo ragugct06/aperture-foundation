@@ -54,11 +54,15 @@ public sealed class LoginTests
         Assert.Equal(success, loginResponse.Authenticated);
         if (success)
         {
+            Assert.Equal("Test", loginResponse.FirstName);
+            Assert.Equal("User", loginResponse.LastName);
             Assert.Equal("test@example.test", loginResponse.Email);
             Assert.Equal(["ClaimsSpecialist"], loginResponse.Roles);
         }
         else
         {
+            Assert.Null(loginResponse.FirstName);
+            Assert.Null(loginResponse.LastName);
             Assert.Null(loginResponse.Email);
             Assert.Empty(loginResponse.Roles);
         }

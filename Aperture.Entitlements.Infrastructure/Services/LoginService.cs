@@ -24,6 +24,8 @@ public sealed class LoginService(EntitlementsDbContext db, TimeProvider timeProv
                 credential.PasswordSalt,
                 credential.PasswordHash,
                 user.UserId,
+                user.FirstName,
+                user.LastName,
                 user.Email,
                 user.Status
             })
@@ -51,6 +53,8 @@ public sealed class LoginService(EntitlementsDbContext db, TimeProvider timeProv
 
         return new LoginAuthenticationResult(
             account.UserId,
+            account.FirstName,
+            account.LastName,
             account.Email,
             roles);
     }
@@ -58,5 +62,7 @@ public sealed class LoginService(EntitlementsDbContext db, TimeProvider timeProv
 
 public sealed record LoginAuthenticationResult(
     Guid UserId,
+    string FirstName,
+    string LastName,
     string Email,
     IReadOnlyCollection<string> Roles);

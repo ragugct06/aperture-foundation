@@ -20,11 +20,19 @@ public sealed class LoginController(LoginService login) : ControllerBase
         Response.Headers.CacheControl = "no-store";
         var authenticated = await login.AuthenticateAsync(request.Username, request.Password, ct);
         if (authenticated is null)
-            return Unauthorized(new LoginResponse(false, "Invalid username or password.", null, []));
+            return Unauthorized(new LoginResponse(
+                false,
+                "Invalid username or password.",
+                null,
+                null,
+                null,
+                []));
 
         return Ok(new LoginResponse(
             true,
             "Authentication successful.",
+            authenticated.FirstName,
+            authenticated.LastName,
             authenticated.Email,
             authenticated.Roles));
     }
@@ -41,5 +49,7 @@ public sealed class LoginRequest
 public sealed record LoginResponse(
     bool Authenticated,
     string Message,
+    string? FirstName,
+    string? LastName,
     string? Email,
     IReadOnlyCollection<string> Roles);

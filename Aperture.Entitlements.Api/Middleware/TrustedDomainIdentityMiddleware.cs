@@ -62,7 +62,8 @@ public sealed class AuthenticatedUserMiddleware(RequestDelegate next)
 {
     public async Task InvokeAsync(HttpContext context)
     {
-        if (IsPublicPath(context.Request.Path) ||
+        if (context.GetEndpoint()?.Metadata.GetMetadata<Microsoft.AspNetCore.Authorization.IAllowAnonymous>() is not null ||
+            IsPublicPath(context.Request.Path) ||
             context.User.Identity?.IsAuthenticated == true)
         {
             await next(context);

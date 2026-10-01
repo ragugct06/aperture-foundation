@@ -11,13 +11,26 @@ builder.Services.Configure<TrustedDomainIdentityOptions>(
 
 // if (builder.Environment.IsDevelopment())
 // {
-    builder.Services
-        .AddAuthentication("DevAuth")
-        .AddScheme<DevAuthOptions, DevAuthHandler>("DevAuth", _ => { });
+builder.Services
+    .AddAuthentication("DevAuth")
+    .AddScheme<DevAuthOptions, DevAuthHandler>("DevAuth", _ => { });
 // }
 
 builder.Services.AddEntitlementsInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", context =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
 builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -47,7 +60,9 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+app.UseRouting();
 app.UseCors();
+app.UseRateLimiter();
 app.UseMiddleware<CorrelationMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseMiddleware<TrustedDomainIdentityMiddleware>();

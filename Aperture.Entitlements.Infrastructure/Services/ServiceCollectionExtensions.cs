@@ -38,6 +38,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IUserContextCache, UserContextCache>();
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<LoginService>();
         services.AddScoped<IEntitlementAdministrationService, EntitlementAdministrationService>();
         return services;
     }

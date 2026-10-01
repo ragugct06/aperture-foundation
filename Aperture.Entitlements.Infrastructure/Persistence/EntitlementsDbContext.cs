@@ -7,6 +7,7 @@ public sealed class EntitlementsDbContext(DbContextOptions<EntitlementsDbContext
     : DbContext(options)
 {
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserCredential> UserCredentials => Set<UserCredential>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<RoleAssignment> RoleAssignments => Set<RoleAssignment>();
     public DbSet<EntitlementOutboxMessage> OutboxMessages => Set<EntitlementOutboxMessage>();
@@ -14,6 +15,17 @@ public sealed class EntitlementsDbContext(DbContextOptions<EntitlementsDbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("entitlement");
+        modelBuilder.Entity<UserCredential>(entity =>
+        {
+            entity.ToTable("user_credential");
+            entity.HasKey(x => x.UserId);
+            entity.Property(x => x.UserId).HasColumnName("user_id");
+            entity.Property(x => x.Username).HasColumnName("username").HasMaxLength(320);
+            entity.Property(x => x.PasswordSalt).HasColumnName("password_salt");
+            entity.Property(x => x.PasswordHash).HasColumnName("password_hash");
+            entity.HasIndex(x => x.Username).IsUnique();
+            entity.HasOne<User>().WithOne().HasForeignKey<UserCredential>(x => x.UserId);
+        });
 
         modelBuilder.Entity<User>(entity =>
         {

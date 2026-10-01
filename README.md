@@ -229,21 +229,47 @@ There is no authorization decision cache, Cerbos dependency, or scoped-role mode
 
 ## Bitbucket delivery pipeline
 
-PRs targeting `main` run the CI script regression tests, restore/build the solution
-including its test project, run application tests, build the runtime image, and
-scan it. PRs targeting other branches are skipped. Image scanning temporarily
+All PRs and `main` pushes run offline shell syntax and CI regression tests in a
+lightweight step without AWS authentication or Docker. Changes only to
+`ci/gitops/`, `ci/release/`, `ci/tests/`, `bitbucket-pipelines.yml`, or documentation
+stop there: they do not build the application, publish an image, or deploy DEV.
+
+Application projects/tests, solution/package/build configuration, Docker inputs,
+and the explicitly listed build/publication scripts trigger full validation for
+PRs targeting `main`. On `main` they trigger full validation plus ECR publication
+and DEV deployment. The path list is shared in `bitbucket-pipelines.yml`; update
+it when adding application directories or build inputs. Other PR targets run
+only the offline checks. Image scanning temporarily
 reports fixable HIGH/CRITICAL vulnerabilities without failing on findings
 (`IMAGE_SCAN_EXIT_CODE=0`, the default). Set `IMAGE_SCAN_EXIT_CODE=1` in Bitbucket
 variables to restore blocking on findings. Scanner execution errors still fail
 in either mode. The JSON scan report and TRX test results are published as
 artifacts. NuGet packages and the Trivy database are cached.
 
-Changes on `main` also publish the image to ECR and update DEV through a GitOps
-PR. The manual `promote-to-qa` pipeline reads DEV's GitOps image digest, creates
+The manual `promote-to-qa` pipeline reads DEV's GitOps image digest, creates
 or reuses a beta release tag, and promotes that digest to QA without rebuilding.
 Both environments automatically approve and merge their GitOps PR after the
 configured repository merge checks allow it. Success means the GitOps PR has
 merged; it does not verify cluster reconciliation or application health.
+
+Manual pipelines provide explicit validation and recovery:
+
+| Pipeline | Purpose |
+| --- | --- |
+| `validate-build` | Run full application/image validation regardless of changed paths; no ECR push or deployment. Use for pipeline YAML/orchestration edits that need a full exercise. |
+| `build-and-deploy-dev` | Force a full build and DEV delivery regardless of changed paths. |
+| `deploy-existing-dev-image` | Supply `IMAGE_COMMIT`, the original full application commit SHA used as an ECR tag. Resolve its existing digest and run DEV GitOps only; no build, image pull, or ECR push. |
+
+For a GitOps fix, run `deploy-existing-dev-image` from a revision containing the
+fixed scripts and select the original image's commit. This can resume its open
+deployment PR. Selecting an older image intentionally redeploys that image.
+
+Bitbucket's native changeset conditions consider all commits in a PR, but only
+the last commit for branch pipelines. Use merge/squash commits into `main` so the
+merge changeset includes the application changes. A multi-commit direct or
+fast-forward push ending in a CI-only commit can skip delivery; run
+`build-and-deploy-dev` to deliver it. These conditions do not track the last
+successful deployment. See [Bitbucket step conditions](https://support.atlassian.com/bitbucket-cloud/docs/step-options/).
 
 Configure these Bitbucket variables before running the pipeline:
 

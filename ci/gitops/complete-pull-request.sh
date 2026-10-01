@@ -130,18 +130,32 @@ echo "GitOps PR: https://bitbucket.org/${WORKSPACE}/${REPOSITORY}/pull-requests/
 # this run does not knowingly approve a different change pushed by another job.
 # These are point-in-time checks, not a lock on the remote branch.
 read_pr() {
+  local actual_commit
   request approver GET "${PR_API}"
   [[ "${HTTP_CODE}" == "200" ]] || fail "Cannot read PR (HTTP ${HTTP_CODE})."
-  jq -e --arg commit "${EXPECTED_COMMIT}" --arg source "${SOURCE_BRANCH}" \
+  jq -e --arg source "${SOURCE_BRANCH}" \
     --arg dest "${DESTINATION_BRANCH}" \
-    '.source.commit.hash == $commit and .source.branch.name == $source and
+    '.source.branch.name == $source and
      .destination.branch.name == $dest' "${RESPONSE}" >/dev/null \
-    || fail "PR source or destination changed; refusing to approve/merge."
+    || fail "PR source or destination branch changed; refusing to approve/merge."
+  actual_commit="$(jq -r '.source.commit.hash // empty' "${RESPONSE}")"
+  # Save the PR state before a commit lookup replaces the response file.
   PR_STATE="$(jq -r '.state' "${RESPONSE}")"
   case "${PR_STATE}" in
     OPEN|MERGED) ;;
     *) fail "PR is ${PR_STATE}; cannot merge." ;;
   esac
+
+  # Bitbucket can return a 12-character hash in a PR response. Resolve it through
+  # the repository commit endpoint before comparing with Git's full hash. A
+  # matching prefix alone must not authorize approval of an ambiguous commit.
+  if [[ "${actual_commit}" =~ ^[0-9a-f]{12,39}$ ]]; then
+    request creator GET "${API%/pullrequests}/commit/${actual_commit}"
+    [[ "${HTTP_CODE}" == "200" ]] || fail "Cannot resolve PR commit (HTTP ${HTTP_CODE})."
+    actual_commit="$(jq -r '.hash // empty' "${RESPONSE}")"
+  fi
+  [[ "${actual_commit}" =~ ^[0-9a-f]{40}$ && "${actual_commit}" == "${EXPECTED_COMMIT}" ]] \
+    || fail "PR source commit mismatch: expected ${EXPECTED_COMMIT}, received ${actual_commit:-missing}; refusing to approve/merge."
 }
 
 # 3. Approve the expected change with the separate approver account.

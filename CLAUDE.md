@@ -83,11 +83,15 @@ Bitbucket responses and temporary local Git repositories, not live deployments.
 
 ## CI and delivery flow
 
-- PRs targeting `main`: CI regression tests, solution restore/build, application
-  tests, local publish, Docker build, and Trivy scan. Other PR targets are skipped.
+- All PRs and `main` pushes run offline script checks in a lightweight step.
+  GitOps/release scripts, CI tests, docs, and pipeline YAML alone do not trigger
+  application builds or delivery. The includePaths list in the pipeline selects
+  application/build inputs; extend it for new application directories.
+- PRs targeting `main` with matching changes: solution restore/build, application
+  tests, local publish, Docker build, and Trivy scan.
   Validation has no deployment environment; AWS/CodeArtifact variables and OIDC
   trust must permit repository-level, non-deployment steps.
-- `main`: the same validation, followed by ECR publication/reuse and a DEV GitOps
+- `main` with matching changes: the same validation, followed by ECR publication/reuse and a DEV GitOps
   update. Tests must pass. Scans temporarily report fixable HIGH/CRITICAL findings
   without blocking (`IMAGE_SCAN_EXIT_CODE=0`); set it to `1` to enforce the gate.
   Scanner execution errors fail in either mode. Keep this switch explicit rather
@@ -96,8 +100,17 @@ Bitbucket responses and temporary local Git repositories, not live deployments.
   create/reuse an application beta tag, and update QA with that same image digest.
   It does not rebuild or copy the image. Full application history supports the
   current tag ancestry check; image deployment itself does not need that history.
-- `install-tools.sh gitops` selects this script's lightweight mode (curl, jq, Git).
-  The default build mode also prepares Python, unzip, and AWS CLI and checks .NET.
+- Manual `validate-build` forces full validation without delivery;
+  `build-and-deploy-dev` forces full delivery. `deploy-existing-dev-image` uses
+  IMAGE_COMMIT to resolve an existing ECR digest and retry DEV GitOps without
+  rebuilding. Run from the revision containing the CI fix, using the original
+  image's application commit as IMAGE_COMMIT.
+- Native changeset conditions inspect all PR commits but only the last commit
+  on `main`. Prefer merge/squash commits; use manual delivery for multi-commit
+  pushes ending in unrelated changes or recovery after a failed delivery.
+- `install-tools.sh gitops` prepares curl, jq, and Git; `scripts` also prepares
+  Python for offline tests; `aws` adds unzip/AWS CLI without .NET checks.
+  Default `build` mode prepares unzip/AWS CLI and checks .NET.
 - `update-environment.sh` edits GitOps values, preserves an identical deployment
   branch on retries, and calls `complete-pull-request.sh` to reuse/create, approve,
   and merge the PR. Distinguish the application SOURCE_COMMIT from DEPLOY_COMMIT,

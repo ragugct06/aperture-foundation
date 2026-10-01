@@ -125,6 +125,35 @@ print(expected["code"], end="")
     def test_changed_branch_never_approved(self):
         self.run_flow([EXISTING, call("GET", "/7", 200, pr(commit="b" * 40))], success=False)
 
+    def test_abbreviated_commit_is_resolved_before_approval_and_merge(self):
+        short_read = call("GET", "/7", 200, pr(commit=COMMIT[:12]))
+        resolved = {"method": "GET", "url": API.removesuffix("/pullrequests") + "/commit/" + COMMIT[:12],
+                    "code": 200, "body": {"hash": COMMIT}}
+        short_merged = call("GET", "/7", 200, pr("MERGED", commit=COMMIT[:12]))
+        self.run_flow([EXISTING, short_read, resolved, APPROVE, short_read, resolved,
+                       CHECKS, MERGE, short_merged, resolved])
+
+    def test_matching_prefix_does_not_allow_a_different_full_commit(self):
+        resolved = {"method": "GET", "url": API.removesuffix("/pullrequests") + "/commit/" + COMMIT[:12],
+                    "code": 200, "body": {"hash": COMMIT[:12] + "b" * 28}}
+        output = self.run_flow([EXISTING, call("GET", "/7", 200, pr(commit=COMMIT[:12])),
+                               resolved], success=False)
+        self.assertIn("PR source commit mismatch", output)
+
+    def test_unresolved_abbreviated_commit_never_approved(self):
+        unresolved = {"method": "GET", "url": API.removesuffix("/pullrequests") + "/commit/" + COMMIT[:12],
+                      "code": 404, "body": {"error": "Commit not found"}}
+        self.run_flow([EXISTING, call("GET", "/7", 200, pr(commit=COMMIT[:12])),
+                       unresolved], success=False)
+
+    def test_missing_commit_never_approved(self):
+        self.run_flow([EXISTING, call("GET", "/7", 200, pr(commit=None))], success=False)
+
+    def test_changed_destination_never_approved(self):
+        changed = pr()
+        changed["destination"]["branch"]["name"] = "unexpected"
+        self.run_flow([EXISTING, call("GET", "/7", 200, changed)], success=False)
+
     def test_already_merged_does_not_post(self):
         self.run_flow([EXISTING, MERGED])
 

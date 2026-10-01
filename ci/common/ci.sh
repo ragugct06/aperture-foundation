@@ -6,7 +6,6 @@ echo " Running Aperture Foundation CI"
 echo "========================================="
 
 ./ci/common/install-tools.sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s ci/tests -v
 
 source ./ci/common/aws-auth.sh
 source ./ci/common/setup-codeartifact.sh

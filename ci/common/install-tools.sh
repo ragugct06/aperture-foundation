@@ -5,9 +5,13 @@ echo "=== Installing required CI tools ==="
 
 MISSING_PACKAGES=()
 REQUIRED_TOOLS=(curl jq git)
-if [[ "${1:-build}" != "gitops" ]]; then
-  REQUIRED_TOOLS+=(unzip python3)
-fi
+MODE="${1:-build}"
+case "${MODE}" in
+  build|aws) REQUIRED_TOOLS+=(unzip) ;;
+  scripts) REQUIRED_TOOLS+=(python3) ;;
+  gitops) ;;
+  *) echo "ERROR: Unknown tool mode: ${MODE}"; exit 1 ;;
+esac
 for TOOL in "${REQUIRED_TOOLS[@]}"; do
   if ! command -v "${TOOL}" >/dev/null 2>&1; then
     MISSING_PACKAGES+=("${TOOL}")
@@ -19,8 +23,8 @@ if (( ${#MISSING_PACKAGES[@]} > 0 )); then
   apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"
 fi
 
-# Promotion only reads GitOps and creates a tag; it needs neither AWS nor .NET.
-if [[ "${1:-build}" == "gitops" ]]; then
+# GitOps promotion and offline script checks need neither AWS CLI nor .NET.
+if [[ "${MODE}" == "gitops" || "${MODE}" == "scripts" ]]; then
   exit 0
 fi
 
@@ -50,8 +54,10 @@ if ! command -v aws >/dev/null 2>&1; then
   rm -rf /tmp/aws /tmp/awscliv2.zip
 fi
 
-echo "dotnet:"
-dotnet --version
+if [[ "${MODE}" == "build" ]]; then
+  echo "dotnet:"
+  dotnet --version
+fi
 
 echo "aws:"
 aws --version

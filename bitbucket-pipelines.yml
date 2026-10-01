@@ -14,6 +14,17 @@ definitions:
       memory: 3072
 
   steps:
+    # Always validate CI changes without AWS credentials or a Docker service.
+    - step: &script-validation
+        name: Validate CI Scripts
+        size: 1x
+        runs-on:
+          - self.hosted
+          - linux
+        script:
+          - bash ci/common/install-tools.sh scripts
+          - bash ci/common/validate-scripts.sh
+
     - step: &ci-validation
         name: CI Validation
         oidc: true
@@ -32,7 +43,7 @@ definitions:
 
         script:
           - |
-            if [ "${BITBUCKET_PR_DESTINATION_BRANCH:-}" != "main" ]; then
+            if [ -n "${BITBUCKET_PR_ID:-}" ] && [ "${BITBUCKET_PR_DESTINATION_BRANCH:-}" != "main" ]; then
               echo "PR is not targeting main. Skipping validation."
               exit 0
             fi
@@ -73,13 +84,70 @@ definitions:
 pipelines:
   pull-requests:
     '**':
-      - step: *ci-validation
+      - step: *script-validation
+      - step:
+          <<: *ci-validation
+          # YAML/GitOps/release-only changes use the lightweight step above.
+          # Use custom validate-build when changing orchestration needs a full run.
+          condition: &application-changes
+            changesets:
+              # Skip full builds only when every changed file is excluded.
+              # New application paths and mixed application/CI changes still build.
+              excludePaths:
+                - "ci/gitops/**"
+                - "ci/release/**"
+                - "ci/tests/**"
+                - "ci/common/validate-scripts.sh"
+                - "ci/ecr/read-existing-image.sh"
+                - "bitbucket-pipelines.yml"
+                - "README.md"
+                - "CLAUDE.md"
+                - ".claudecodeignore"
+                - ".gitignore"
+                - "scripts/**"
 
   branches:
     main:
-      - step: *dev-deploy
+      - step: *script-validation
+      - step:
+          <<: *dev-deploy
+          condition: *application-changes
 
   custom:
+    # Explicit full validation for pipeline YAML and orchestration changes.
+    validate-build:
+      - step: *script-validation
+      - step: *ci-validation
+
+    # Recovery for missed/failed delivery or an intentional full rebuild.
+    build-and-deploy-dev:
+      - step: *script-validation
+      - step: *dev-deploy
+
+    # Run from a commit containing the GitOps fix; select the ORIGINAL image's
+    # application commit, not this pipeline's BITBUCKET_COMMIT. No build/push.
+    deploy-existing-dev-image:
+      - variables:
+          - name: IMAGE_COMMIT
+            description: "Full application commit SHA used as the existing ECR image tag"
+      - step: *script-validation
+      - step:
+          name: Deploy Existing DEV Image
+          oidc: true
+          deployment: DEV
+          size: 1x
+          runs-on:
+            - self.hosted
+            - linux
+          script:
+            - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
+            - ./ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - ./ci/ecr/read-existing-image.sh
+            - ./ci/gitops/update-environment.sh dev aperture-foundation reports/image-metadata.env
+          artifacts:
+            - reports/**
+
     promote-to-qa:
       - variables:
           - name: RELEASE_VERSION

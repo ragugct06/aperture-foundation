@@ -16,7 +16,7 @@ builder.Services.Configure<TrustedDomainIdentityOptions>(
         .AddScheme<DevAuthOptions, DevAuthHandler>("DevAuth", _ => { });
 // }
 
-builder.Services.AddEntitlementsInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
+builder.Services.AddEntitlementsInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
 builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();

@@ -44,6 +44,14 @@ class PullRequestTests(unittest.TestCase):
 import json, os, sys
 from pathlib import Path
 args = sys.argv[1:]
+headers = [args[i + 1] for i, arg in enumerate(args) if arg == "--header"]
+if "--data" in args:
+    assert "Content-Type: application/json" in headers, args
+    json.loads(args[args.index("--data") + 1])
+else:
+    # Approval is a bodyless POST. Declaring JSON without a JSON body can cause
+    # the server to reject it before the approval handler runs.
+    assert not any(header.lower().startswith("content-type:") for header in headers), args
 sequence = Path(os.environ["MOCK_CALLS"])
 calls = json.loads(sequence.read_text())
 assert calls, "Unexpected HTTP request"

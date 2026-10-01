@@ -76,7 +76,7 @@ request() {
   fi
   HTTP_CODE="$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
     "${retry[@]}" "${auth[@]}" --request "${method}" \
-    --header 'Accept: application/json' --header 'Content-Type: application/json' \
+    --header 'Accept: application/json' \
     --output "${RESPONSE}" --write-out '%{http_code}' "$@" "${url}")" \
     || fail "Bitbucket request failed; rerun to reconcile the PR."
 }
@@ -107,7 +107,7 @@ if [[ -z "${PR_ID}" ]]; then
     --arg dest "${DESTINATION_BRANCH}" \
     '{title: $title, source: {branch: {name: $source}},
       destination: {branch: {name: $dest}}, close_source_branch: true}')"
-  request creator POST "${API}" --data "${PAYLOAD}"
+  request creator POST "${API}" --header 'Content-Type: application/json' --data "${PAYLOAD}"
   case "${HTTP_CODE}" in
     # 201 = created. A 400/409 is recoverable only if a matching PR now exists.
     201) PR_ID="$(jq -r '.id // empty' "${RESPONSE}")" ;;
@@ -165,6 +165,8 @@ if [[ "${PR_STATE}" == "MERGED" ]]; then
   echo "GitOps PR ${PR_ID} is already merged."
   exit 0
 fi
+# Approval takes no request body. Do not declare Content-Type: application/json
+# here: an empty body is not JSON and may be rejected before approval is handled.
 request approver POST "${PR_API}/approve"
 [[ "${HTTP_CODE}" == "200" ]] || fail "Cannot approve PR (HTTP ${HTTP_CODE})."
 jq -e '.approved == true' "${RESPONSE}" >/dev/null || fail "Approval was not recorded."
@@ -207,7 +209,8 @@ while (( SECONDS < DEADLINE )); do
     else
       # Eligibility can change between the check and POST; a 409 returns to the
       # checks loop. Authentication/other API failures stop immediately.
-      request approver POST "${PR_API}/merge" --data '{"close_source_branch":true}'
+      request approver POST "${PR_API}/merge" --header 'Content-Type: application/json' \
+        --data '{"close_source_branch":true}'
       case "${HTTP_CODE}" in
         # 200 = synchronous response; still verify the PR state next iteration.
         200) MERGE_ACCEPTED=true ;;

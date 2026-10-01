@@ -25,14 +25,16 @@ contracts from an assumed specification as part of routine maintenance.
 | `Aperture.Entitlements.Api/` | ASP.NET Core host, controllers, identity/error/correlation middleware |
 | `Aperture.Entitlements.Contracts/` | API request and response contracts |
 | `Aperture.Entitlements.Domain/` | User, role, assignment, and outbox entities |
-| `Aperture.Entitlements.Infrastructure/` | Application services, EF Core persistence/migrations, Redis cache |
+| `Aperture.Entitlements.Infrastructure/` | Application services, EF Core persistence and historical migrations, Redis cache |
 | `tests/Aperture.Entitlements.Tests/` | xUnit application tests |
 | `ci/common/` | Tool setup, restore/build/test, publish, Docker build, vulnerability scan |
 | `ci/ecr/` | DEV image publication and image metadata |
 | `ci/gitops/` | Read/update environment values and complete deployment PRs |
-| `ci/release/` | QA promotion and beta release tagging |
+| `ci/release/` | Tag resolution and QE/UAT/production promotion |
 | `ci/tests/` | Offline Python regression tests for CI scripts |
-| `scripts/` | Database schema, role, and seed SQL |
+| `database/` | Authoritative Liquibase changelog, SQL changesets, and migration guide |
+| `ci/database/` | Release-pinned migration runner and disposable PostgreSQL validation |
+| `scripts/` | Legacy SQL and operational role provisioning references |
 | `DockerFile` | Runtime image consuming `app/publish/`; filename is case-sensitive |
 
 ## Stack and implementation conventions
@@ -85,24 +87,30 @@ Bitbucket responses and temporary local Git repositories, not live deployments.
 
 - All PRs and `main` pushes run offline script checks in a lightweight step.
   GitOps/release scripts, CI tests, docs, and pipeline YAML alone do not trigger
-  application builds or delivery. The includePaths list in the pipeline selects
-  application/build inputs; extend it for new application directories.
+  application builds or delivery. The excludePaths list skips non-application
+  changes; new application paths build by default. Relevant database, persistence,
+  domain, and pipeline YAML changes also run disposable PostgreSQL validation.
 - PRs targeting `main` with matching changes: solution restore/build, application
   tests, local publish, Docker build, and Trivy scan.
   Validation has no deployment environment; AWS/CodeArtifact variables and OIDC
   trust must permit repository-level, non-deployment steps.
-- `main` with matching changes: the same validation, followed by ECR publication/reuse and a DEV GitOps
+- `main` with matching changes: the same validation, followed by ECR publication/reuse, Liquibase update, and a DEV GitOps
   update. Tests must pass. Scans temporarily report fixable HIGH/CRITICAL findings
   without blocking (`IMAGE_SCAN_EXIT_CODE=0`); set it to `1` to enforce the gate.
   Scanner execution errors fail in either mode. Keep this switch explicit rather
   than commenting out an argument inside a continued shell command.
-- Manual `promote-to-qa`: read DEV's GitOps image repository/digest and source commit,
-  create/reuse an application beta tag, and update QA with that same image digest.
-  It does not rebuild or copy the image. Full application history supports the
-  current tag ancestry check; image deployment itself does not need that history.
+- Manual `create-beta-tag`, `create-rc-tag`, and `create-prod-tag` create annotated
+  tags without deployment. Beta accepts a full main SHA; RC/final accept prior-stage
+  tags of the same version. They verify the existing image, never move tags, and
+  use the target deployment's secured APP_REPO_ACCESS_TOKEN for tag pushes.
+- Manual `promote-to-qe`, `promote-to-uat`, and `promote-to-prod` accept an existing
+  RELEASE_TAG (beta, RC, and final respectively), resolve it to a main commit,
+  verify its existing ECR image, migrate from that commit, then update GitOps.
+  They never create tags or rebuild images. QE uses the existing QA deployment
+  and qa GitOps directory.
 - Manual `validate-build` forces full validation without delivery;
   `build-and-deploy-dev` forces full delivery. `deploy-existing-dev-image` uses
-  IMAGE_COMMIT to resolve an existing ECR digest and retry DEV GitOps without
+  IMAGE_COMMIT to resolve an existing ECR digest, apply its changelog, and retry DEV GitOps without
   rebuilding. Run from the revision containing the CI fix, using the original
   image's application commit as IMAGE_COMMIT.
 - Native changeset conditions inspect all PR commits but only the last commit
@@ -127,6 +135,22 @@ See the usage guides and numbered comments in `update-environment.sh`,
 `complete-pull-request.sh`, and `create-next-tag.sh` before modifying release logic.
 These scripts push branches/tags and approve/merge real PRs when run with credentials;
 use the offline tests when validating changes locally.
+
+## Database migrations
+
+- Liquibase is the schema migration authority. Keep EF Core for runtime persistence;
+  do not run EF database updates or legacy schema scripts alongside Liquibase.
+- DEV/QA are new databases; apply the initial changelog normally, never auto-sync.
+- Append immutable changesets with forward and rollback `sqlFile` references in `database/changelog.yaml`; use `splitStatements: false` for PostgreSQL procedural blocks.
+  Include the outbox and credentials when checking model/schema compatibility.
+- Migrations execute before GitOps from the image's source commit; old commits
+  without `database/` fail closed. A failed migration must stop deployment.
+- Database-only changes skip image builds. `migrate-dev-db` uses BITBUCKET_COMMIT;
+  `migrate-qe-db`, `migrate-uat-db`, and `migrate-prod-db` resolve RELEASE_TAG.
+  Use additive changes compatible with the running application.
+- See `database/README.md` for credentials, provisioning, and recovery. Do not run
+  live updates during local verification. Use `bash ci/database/test-migrations.sh`
+  with Docker for fresh-install and repeat-update verification.
 
 ## Generated files
 

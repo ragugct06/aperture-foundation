@@ -5,7 +5,7 @@
 #   RELEASE_VERSION=1.2.0 bash ci/release/create-next-tag.sh \
 #     reports/source-environment.env reports/qa-release.env
 #
-# Called by: ci/release/promote-qa.sh, after reading DEV's GitOps values.
+# Legacy standalone tag allocator; tag-based promotion does not call this script.
 # Required environment: RELEASE_VERSION and APP_REPO_ACCESS_TOKEN (tag push).
 # Input file: trusted shell assignments for SOURCE_COMMIT and SOURCE_IMAGE_DIGEST.
 # Output file: RELEASE_TAG, SOURCE_COMMIT, and SOURCE_IMAGE_DIGEST assignments.

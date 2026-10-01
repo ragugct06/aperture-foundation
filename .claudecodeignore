@@ -1,5 +1,6 @@
 # Generated files and local workspace noise.
 # These patterns do not change Git tracking and are not a security boundary.
+.liquibase-work.*/
 
 # IDE state
 .vs/

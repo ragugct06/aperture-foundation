@@ -1,4 +1,5 @@
 # Build output
+.liquibase-work.*/
 [Oo]bj/
 [Bb]in/
 [Oo]ut/

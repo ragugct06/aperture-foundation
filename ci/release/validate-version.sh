@@ -4,22 +4,23 @@ set -euo pipefail
 RELEASE_TAG="${1:?release tag is required}"
 DEPLOY_ENV="${2:?deployment environment is required}"
 
-BETA_PATTERN='^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'
-RC_PATTERN='^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'
-PROD_PATTERN='^v[0-9]+\.[0-9]+\.[0-9]+$'
+NUMBER='(0|[1-9][0-9]*)'
+BETA_PATTERN="^v?${NUMBER}\.${NUMBER}\.${NUMBER}-beta\.${NUMBER}$"
+RC_PATTERN="^v?${NUMBER}\.${NUMBER}\.${NUMBER}-rc\.${NUMBER}$"
+PROD_PATTERN="^v?${NUMBER}\.${NUMBER}\.${NUMBER}$"
 
 case "${DEPLOY_ENV}" in
-  qa)
+  qa|qe)
     EXPECTED_PATTERN="${BETA_PATTERN}"
-    EXPECTED_FORMAT="v1.2.3-beta.1"
+    EXPECTED_FORMAT="1.2.3-beta.1"
     ;;
   uat)
     EXPECTED_PATTERN="${RC_PATTERN}"
-    EXPECTED_FORMAT="v1.2.3-rc.1"
+    EXPECTED_FORMAT="1.2.3-rc.1"
     ;;
   prod)
     EXPECTED_PATTERN="${PROD_PATTERN}"
-    EXPECTED_FORMAT="v1.2.3"
+    EXPECTED_FORMAT="1.2.3"
     ;;
   *)
     echo "ERROR: Unsupported environment: ${DEPLOY_ENV}"

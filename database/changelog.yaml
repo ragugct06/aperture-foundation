@@ -1,0 +1,48 @@
+# Append new changesets in deployment order. Never edit an executed changeset.
+# Disable statement splitting so PostgreSQL DO/function blocks remain intact.
+databaseChangeLog:
+  - changeSet:
+      id: 001-entitlements
+      author: aperture
+      logicalFilePath: changes/001-entitlements.sql
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: changes/001-entitlements.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: rollback/001-entitlements.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 002-user-credentials
+      author: aperture
+      logicalFilePath: changes/002-user-credentials.sql
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: changes/002-user-credentials.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: rollback/002-user-credentials.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 003-seed-roles
+      author: aperture
+      logicalFilePath: changes/003-seed-roles.sql
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: changes/003-seed-roles.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: rollback/003-seed-roles.sql
+            relativeToChangelogFile: true
+            splitStatements: false

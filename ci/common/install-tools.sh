@@ -23,7 +23,7 @@ if (( ${#MISSING_PACKAGES[@]} > 0 )); then
   apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"
 fi
 
-# GitOps promotion and offline script checks need neither AWS CLI nor .NET.
+# GitOps-only operations and offline script checks need neither AWS CLI nor .NET.
 if [[ "${MODE}" == "gitops" || "${MODE}" == "scripts" ]]; then
   exit 0
 fi

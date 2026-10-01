@@ -14,6 +14,17 @@ definitions:
       memory: 3072
 
   steps:
+    - step: &database-validation
+        name: Validate Liquibase on PostgreSQL
+        runs-on:
+          - self.hosted
+          - linux
+        services:
+          - docker
+        script:
+          - bash ci/common/install-tools.sh gitops
+          - bash ci/database/test-migrations.sh
+
     # Always validate CI changes without AWS credentials or a Docker service.
     - step: &script-validation
         name: Validate CI Scripts
@@ -75,6 +86,7 @@ definitions:
           - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
           - source ./ci/common/ci.sh
           - ./ci/ecr/publish-dev.sh
+          - bash ci/database/migrate.sh update "${BITBUCKET_COMMIT}"
           - ./ci/gitops/update-environment.sh dev aperture-foundation reports/image-metadata.env
 
         artifacts:
@@ -85,6 +97,16 @@ pipelines:
   pull-requests:
     '**':
       - step: *script-validation
+      - step:
+          <<: *database-validation
+          condition: &database-changes
+            changesets:
+              includePaths:
+                - "database/**"
+                - "ci/database/**"
+                - "Aperture.Entitlements.Infrastructure/Persistence/**"
+                - "Aperture.Entitlements.Domain/**"
+                - "bitbucket-pipelines.yml"
       - step:
           <<: *ci-validation
           # YAML/GitOps/release-only changes use the lightweight step above.
@@ -105,23 +127,193 @@ pipelines:
                 - ".claudecodeignore"
                 - ".gitignore"
                 - "scripts/**"
+                # Schema-only changes use the manual migrate-*-db
+                # pipelines below, without building or publishing an app image.
+                - "database/**"
+                - "ci/database/**"
 
   branches:
     main:
       - step: *script-validation
       - step:
+          <<: *database-validation
+          condition: *database-changes
+      - step:
           <<: *dev-deploy
           condition: *application-changes
 
   custom:
+    create-beta-tag:
+      - variables:
+          - name: RELEASE_TAG
+            description: "Tag to create, for example 1.0.0-beta.1"
+          - name: SOURCE_REF
+            description: "Full 40-character tested main commit SHA"
+      - step: *script-validation
+      - step:
+          name: Create BETA Release Tag (No Deployment)
+          oidc: true
+          deployment: QA
+          size: 1x
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          script:
+            - bash ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - bash ci/release/create-tag.sh qe
+          artifacts:
+            - reports/**
+
+    create-rc-tag:
+      - variables:
+          - name: RELEASE_TAG
+            description: "Tag to create, for example 1.0.0-rc.1"
+          - name: SOURCE_REF
+            description: "Approved beta tag, for example 1.0.0-beta.1"
+      - step: *script-validation
+      - step:
+          name: Create RC Release Tag (No Deployment)
+          oidc: true
+          deployment: UAT
+          size: 1x
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          script:
+            - bash ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - bash ci/release/create-tag.sh uat
+          artifacts:
+            - reports/**
+
+    create-prod-tag:
+      - variables:
+          - name: RELEASE_TAG
+            description: "Tag to create, for example 1.0.0"
+          - name: SOURCE_REF
+            description: "Approved RC tag, for example 1.0.0-rc.1"
+      - step: *script-validation
+      - step:
+          name: Create PROD Release Tag (No Deployment)
+          oidc: true
+          deployment: PROD
+          size: 1x
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          script:
+            - bash ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - bash ci/release/create-tag.sh prod
+          artifacts:
+            - reports/**
+
+    # Explicit database-only delivery. DEV uses its pipeline commit; other environments use an existing release tag.
+    migrate-dev-db:
+      - step: *database-validation
+      - step:
+          name: Migrate DEV Database
+          oidc: true
+          deployment: DEV
+          runs-on:
+            - self.hosted
+            - linux
+          services:
+            - docker
+          script:
+            - bash ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - bash ci/database/migrate.sh update "${BITBUCKET_COMMIT}"
+
+    migrate-qe-db:
+      - variables:
+          - name: RELEASE_TAG
+            description: "Existing release tag, for example 1.0.0-beta.1"
+      - step: *script-validation
+      - step:
+          name: Migrate QE Tagged Release
+          oidc: true
+          deployment: QA
+          size: 1x
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          services:
+            - docker
+          script:
+            - bash ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - bash ci/database/migrate-tag.sh qe
+          artifacts:
+            - reports/**
+
+    migrate-uat-db:
+      - variables:
+          - name: RELEASE_TAG
+            description: "Existing release tag, for example 1.0.0-rc.1"
+      - step: *script-validation
+      - step:
+          name: Migrate UAT Tagged Release
+          oidc: true
+          deployment: UAT
+          size: 1x
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          services:
+            - docker
+          script:
+            - bash ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - bash ci/database/migrate-tag.sh uat
+          artifacts:
+            - reports/**
+
+    migrate-prod-db:
+      - variables:
+          - name: RELEASE_TAG
+            description: "Existing release tag, for example 1.0.0"
+      - step: *script-validation
+      - step:
+          name: Migrate PROD Tagged Release
+          oidc: true
+          deployment: PROD
+          size: 1x
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          services:
+            - docker
+          script:
+            - bash ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - bash ci/database/migrate-tag.sh prod
+          artifacts:
+            - reports/**
+
     # Explicit full validation for pipeline YAML and orchestration changes.
     validate-build:
       - step: *script-validation
+      - step: *database-validation
       - step: *ci-validation
 
     # Recovery for missed/failed delivery or an intentional full rebuild.
     build-and-deploy-dev:
       - step: *script-validation
+      - step: *database-validation
       - step: *dev-deploy
 
     # Run from a commit containing the GitOps fix; select the ORIGINAL image's
@@ -136,6 +328,8 @@ pipelines:
           oidc: true
           deployment: DEV
           size: 1x
+          services:
+            - docker
           runs-on:
             - self.hosted
             - linux
@@ -144,30 +338,79 @@ pipelines:
             - ./ci/common/install-tools.sh aws
             - source ./ci/common/aws-auth.sh
             - ./ci/ecr/read-existing-image.sh
+            - bash ci/database/migrate.sh update "${IMAGE_COMMIT}"
             - ./ci/gitops/update-environment.sh dev aperture-foundation reports/image-metadata.env
           artifacts:
             - reports/**
 
-    promote-to-qa:
+    promote-to-qe:
       - variables:
-          - name: RELEASE_VERSION
-            description: "Semantic release version, for example 1.0.0"
-
+          - name: RELEASE_TAG
+            description: "Existing release tag, for example 1.0.0-beta.1"
+      - step: *script-validation
       - step:
-          name: Promote DEV Release to QA
+          name: Promote QE Tagged Release
+          oidc: true
           deployment: QA
           size: 1x
           clone:
             depth: full
-
           runs-on:
             - self.hosted
             - linux
-
+          services:
+            - docker
           script:
-            - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
-            - ./ci/common/install-tools.sh gitops
-            - ./ci/release/promote-qa.sh
+            - bash ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - bash ci/release/promote.sh qe
+          artifacts:
+            - reports/**
 
+    promote-to-uat:
+      - variables:
+          - name: RELEASE_TAG
+            description: "Existing release tag, for example 1.0.0-rc.1"
+      - step: *script-validation
+      - step:
+          name: Promote UAT Tagged Release
+          oidc: true
+          deployment: UAT
+          size: 1x
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          services:
+            - docker
+          script:
+            - bash ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - bash ci/release/promote.sh uat
+          artifacts:
+            - reports/**
+
+    promote-to-prod:
+      - variables:
+          - name: RELEASE_TAG
+            description: "Existing release tag, for example 1.0.0"
+      - step: *script-validation
+      - step:
+          name: Promote PROD Tagged Release
+          oidc: true
+          deployment: PROD
+          size: 1x
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          services:
+            - docker
+          script:
+            - bash ci/common/install-tools.sh aws
+            - source ./ci/common/aws-auth.sh
+            - bash ci/release/promote.sh prod
           artifacts:
             - reports/**

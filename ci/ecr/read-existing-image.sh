@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Resolve an already-published image for a GitOps-only DEV retry.
+# Resolve an already-published image for a DEV retry or tagged promotion.
 # IMAGE_COMMIT is the original image tag; BITBUCKET_COMMIT identifies the CI fix.
 # No Docker build, image pull, or ECR push is performed here.
 set -euo pipefail
@@ -31,4 +31,4 @@ printf 'RELEASE_TAG=%q\nSOURCE_COMMIT=%q\nIMAGE_REPOSITORY=%q\nIMAGE_DIGEST=%q\n
   dev "${IMAGE_COMMIT}" \
   "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}" \
   "${IMAGE_DIGEST}" > reports/image-metadata.env
-echo "Existing DEV image resolved: ${IMAGE_COMMIT}@${IMAGE_DIGEST}"
+echo "Existing image resolved: ${IMAGE_COMMIT}@${IMAGE_DIGEST}"

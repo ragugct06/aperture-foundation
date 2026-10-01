@@ -150,26 +150,15 @@ This arrangement is safe only when the Entitlements API is private and the netwo
 
 ## PostgreSQL
 
-Create the database and apply scripts in order:
+Liquibase manages the schema in `database/changelog.yaml`. DEV and QA start
+with empty databases: run the normal update; no baseline sync is needed.
+See [the migration guide](database/README.md) for provisioning, deployment variables,
+local commands, and adding changesets. Do not apply the legacy `scripts/` schema
+files or EF migrations alongside Liquibase.
 
-```powershell
-$env:PGPASSWORD = "your-local-password"
-psql -h localhost -U postgres -c "CREATE DATABASE aperture_foundation;"
-psql -h localhost -U postgres -d aperture_foundation -f deploy/postgres/001_entitlement_schema.sql
-psql -h localhost -U postgres -d aperture_foundation -f deploy/postgres/002_database_roles.sql
-psql -h localhost -U postgres -d aperture_foundation -f deploy/postgres/003_seed_roles.sql
-```
-
-The schema uses these tables:
-
-```text
-entitlement.app_user
-entitlement.app_role
-entitlement.role_assignment
-entitlement.entitlement_outbox
-```
-
-If upgrading an existing database containing the previous `subject`/`persona` schema, create and review a data migration instead of running this initial script over the existing database.
+The initial changelog creates `entitlement.app_user`, `app_role`,
+`role_assignment`, `entitlement_outbox`, and `user_credential`, and seeds the
+four reference roles. It does not create database logins or user credentials.
 
 The optional first `Admin` assignment can be created as deployment seed data so the Domain API has an initial administrative role to consume:
 
@@ -231,37 +220,87 @@ There is no authorization decision cache, Cerbos dependency, or scoped-role mode
 All PRs and `main` pushes run offline shell syntax and CI regression tests in a
 lightweight step without AWS authentication or Docker. Changes only to
 `ci/gitops/`, `ci/release/`, `ci/tests/`, `bitbucket-pipelines.yml`, or documentation
-stop there: they do not build the application, publish an image, or deploy DEV.
+do not build the application, publish an image, or deploy DEV. Database, persistence,
+domain, and pipeline YAML changes also run an isolated PostgreSQL migration test.
 
 Application projects/tests, solution/package/build configuration, Docker inputs,
 and the explicitly listed build/publication scripts trigger full validation for
 PRs targeting `main`. On `main` they trigger full validation plus ECR publication
 and DEV deployment. The path list is shared in `bitbucket-pipelines.yml`; update
-it when adding application directories or build inputs. Other PR targets run
-only the offline checks. Image scanning temporarily
+it when changing build exclusions. Other PR targets run
+the offline checks and, when relevant, the database check. Image scanning temporarily
 reports fixable HIGH/CRITICAL vulnerabilities without failing on findings
 (`IMAGE_SCAN_EXIT_CODE=0`, the default). Set `IMAGE_SCAN_EXIT_CODE=1` in Bitbucket
 variables to restore blocking on findings. Scanner execution errors still fail
 in either mode. The JSON scan report and TRX test results are published as
 artifacts. NuGet packages and the Trivy database are cached.
 
-The manual `promote-to-qa` pipeline reads DEV's GitOps image digest, creates
-or reuses a beta release tag, and promotes that digest to QA without rebuilding.
-Both environments automatically approve and merge their GitOps PR after the
-configured repository merge checks allow it. Success means the GitOps PR has
-merged; it does not verify cluster reconciliation or application health.
+Promotions use existing release tags from trunk: `1.0.0-beta.1` for QE,
+`1.0.0-rc.1` for UAT, and `1.0.0` for production. An optional `v` prefix is
+accepted for existing tags. The pipeline fetches the selected tag, resolves it
+(including annotated tags) to a commit on `origin/main`, verifies the changelog
+exists, and resolves that commit's existing ECR image before any migration.
+It then applies that commit's migrations and updates GitOps with the same image
+digest. A missing image or failed migration stops promotion. No image is rebuilt
+and no release tag is created or moved by promotion.
+
+QE retains the existing Bitbucket deployment name `QA` and GitOps path
+`environments/qa/aperture-foundation/values.yaml`. UAT and production use `UAT` /
+`uat` and `PROD` / `prod`. Create those Bitbucket environments and GitOps values
+files before using their pipelines. Configure environment-specific secrets, roles,
+network access, and GitOps permissions. Restrict production deployment access in
+Bitbucket. GitOps PRs are automatically approved/merged after configured merge
+checks; pipeline success does not verify cluster reconciliation or application health.
+
+Create immutable release tags through your release process before promotion.
+When advancing the same tested artifact from beta to RC to final, point all three
+tags at the same commit. Changed code needs a new tested candidate. Keep ECR
+commit tags immutable and retain candidate images for later promotions.
+Promotion requires an existing commit-tagged image; database-only releases can
+use the migration-only pipelines without an image.
+
+Create tags with the manual `create-beta-tag`, `create-rc-tag`, and
+`create-prod-tag` pipelines. Start them from protected `main` with these inputs:
+
+| Pipeline | `RELEASE_TAG` | `SOURCE_REF` |
+| --- | --- | --- |
+| `create-beta-tag` | `1.0.0-beta.1` | Full 40-character tested main commit SHA |
+| `create-rc-tag` | `1.0.0-rc.1` | Approved beta tag, such as `1.0.0-beta.1` |
+| `create-prod-tag` | `1.0.0` | Approved RC tag, such as `1.0.0-rc.1` |
+
+RC and final tags must use the same major.minor.patch version as their source.
+Each run verifies main ancestry, the changelog, and the existing ECR image before
+creating an annotated tag. Existing remote tags on the same commit are reused;
+conflicting tags are rejected without force-pushing. No migration or application
+deployment is performed. After creation, run the corresponding `promote-to-*`
+pipeline with the new tag. Source-tag approval is an operational release decision;
+the script does not check test sign-offs or prior deployment status.
+
+Configure secured `APP_REPO_ACCESS_TOKEN` in QA, UAT, and PROD with permission to
+push tags to this application repository. Tag creation also uses that environment's
+AWS OIDC role and ECR settings. The pipeline-provided `BITBUCKET_GIT_HTTP_ORIGIN`
+is the push destination; the credential is supplied through a Git credential
+helper, not stored in the remote URL. Restrict these pipelines using each target
+environment's deployment permissions. They declare QA/UAT/PROD for permissions
+and variable scoping, so Bitbucket may record the tag-creation step as a deployment
+even though it only creates a Git tag. Promotion itself requires no tag-push token.
 
 Manual pipelines provide explicit validation and recovery:
 
 | Pipeline | Purpose |
 | --- | --- |
 | `validate-build` | Run full application/image validation regardless of changed paths; no ECR push or deployment. Use for pipeline YAML/orchestration edits that need a full exercise. |
+| `migrate-dev-db` | Validate on disposable PostgreSQL, then migrate DEV using the selected pipeline commit; no application deployment. |
+| `migrate-qe-db`, `migrate-uat-db`, `migrate-prod-db` | Supply `RELEASE_TAG`; apply that tag's changelog to the target database without image lookup or GitOps changes. |
+| `promote-to-qe`, `promote-to-uat`, `promote-to-prod` | Supply `RELEASE_TAG`; resolve the existing image, migrate the database, then update GitOps. |
 | `build-and-deploy-dev` | Force a full build and DEV delivery regardless of changed paths. |
-| `deploy-existing-dev-image` | Supply `IMAGE_COMMIT`, the original full application commit SHA used as an ECR tag. Resolve its existing digest and run DEV GitOps only; no build, image pull, or ECR push. |
+| `deploy-existing-dev-image` | Supply `IMAGE_COMMIT`, the original full application commit SHA used as an ECR tag. Resolve its existing digest, apply its migrations, and update DEV GitOps; no application build or ECR push. |
 
 For a GitOps fix, run `deploy-existing-dev-image` from a revision containing the
 fixed scripts and select the original image's commit. This can resume its open
-deployment PR. Selecting an older image intentionally redeploys that image.
+deployment PR. Selecting an older image intentionally redeploys that image;
+it does not roll back the database. Images whose commit predates `database/`
+cannot use this migration-enabled deployment flow.
 
 Bitbucket's native changeset conditions consider all commits in a PR, but only
 the last commit for branch pipelines. Use merge/squash commits into `main` so the
@@ -276,16 +315,18 @@ Configure these Bitbucket variables before running the pipeline:
 | --- | --- |
 | Repository (PR validation) | `AWS_ROLE_ARN`, `AWS_REGION`, `CODEARTIFACT_DOMAIN`, `CODEARTIFACT_DOMAIN_OWNER`, `CODEARTIFACT_REPOSITORY`. The role needs CodeArtifact read access and an OIDC trust policy permitting this repository's non-deployment steps. |
 | DEV deployment | Override `AWS_ROLE_ARN` with the publishing role; configure `AWS_ACCOUNT_ID`, `ECR_REPOSITORY`, and the AWS region. This role also needs CodeArtifact read and ECR publishing access. |
-| DEV and QA deployments | `GITOPS_ACCESS_TOKEN`: repository access token for `anovorx/aperture-gitops` with repository read/write and pull request read/write permissions. |
-| DEV and QA deployments | `GITOPS_APPROVER_EMAIL`, `GITOPS_APPROVER_TOKEN`: a separate account's Atlassian email and API token with `read:pullrequest:bitbucket` and `write:pullrequest:bitbucket` scopes, repository access, and permission to merge into GitOps `main`. |
-| QA deployment | `APP_REPO_ACCESS_TOKEN`: repository access token permitting release tag pushes to this application repository. `RELEASE_VERSION` is supplied when starting promotion, for example `1.2.0`. |
+| DEV, QA (QE), UAT, and PROD deployments | `GITOPS_ACCESS_TOKEN`: repository access token for `anovorx/aperture-gitops` with repository read/write and pull request read/write permissions. |
+| DEV, QA (QE), UAT, and PROD deployments | `GITOPS_APPROVER_EMAIL`, `GITOPS_APPROVER_TOKEN`: a separate account's Atlassian email and API token with `read:pullrequest:bitbucket` and `write:pullrequest:bitbucket` scopes, repository access, and permission to merge into GitOps `main`. |
+| DEV, QA (QE), UAT, and PROD deployments | `DB_SECRET_ID` (environment-specific AWS Secrets Manager name/ARN), `AWS_REGION`, and `AWS_ROLE_ARN` for OIDC. The runner fetches database credentials at runtime; see `database/README.md` for JSON key mappings and TLS settings. Docker containers on the runner must reach that database. |
+| QA (QE), UAT, and PROD deployments | `AWS_ACCOUNT_ID` and `ECR_REPOSITORY` identify the shared image repository; `AWS_REGION` must locate that repository and the environment secret. The OIDC role needs `ecr:DescribeImages` on the repository plus secret/KMS access. Supply `RELEASE_TAG` when starting promotion; no application tag-push token is needed. |
 
 Keep tokens secured and scoped to deployment environments. PR validation no
 longer declares a DEV deployment and cannot read DEV deployment variables.
 Configure required builds/approvals as enforced merge checks in the GitOps
 repository. GitOps commits no longer contain `[skip ci]`, so its validation can
-run. A custom QA pipeline should be started from `main` and restricted through
-Bitbucket deployment permissions.
+run. Start promotion pipelines from `main` containing the current orchestration scripts,
+and restrict them through Bitbucket deployment permissions. `RELEASE_TAG` selects
+the artifact and migrations independently of the pipeline checkout commit.
 
 An unchanged deployment retry preserves its branch commit and reuses the open
 PR. Pending merge checks and asynchronous merge tasks are polled every 10

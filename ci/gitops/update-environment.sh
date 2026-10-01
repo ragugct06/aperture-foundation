@@ -5,7 +5,7 @@
 #   bash ci/gitops/update-environment.sh dev aperture-foundation reports/image-metadata.env
 #   bash ci/gitops/update-environment.sh qa aperture-foundation reports/promoted-image.env
 #
-# Called by: the DEV pipeline or ci/release/promote-qa.sh.
+# Called by: the DEV pipeline or ci/release/promote.sh.
 # Input: a trusted, generated shell file containing RELEASE_TAG, SOURCE_COMMIT,
 #        IMAGE_REPOSITORY, and IMAGE_DIGEST; GitOps credentials come from CI.
 # Flow: load metadata -> clone GitOps -> edit values -> push/reuse branch -> PR.
@@ -53,7 +53,7 @@ SHORT_COMMIT="${SOURCE_COMMIT:0:12}"
 
 # Stable branch names let a retry find the same deployment branch and open PR.
 # DEV uses a commit ID because every DEV build shares the release label "dev".
-# QA uses the versioned release tag, for example v1.2.0-beta.3.
+# QE/UAT/production use the selected versioned release tag.
 if [[ "${DEPLOY_ENV}" == "dev" ]]; then
   DEPLOY_BRANCH="deploy/${DEPLOY_ENV}/${SERVICE_NAME}/${SHORT_COMMIT}"
 else

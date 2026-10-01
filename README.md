@@ -1,6 +1,6 @@
 # Aperture Entitlements API
 
-This solution implements the Entitlements API with trusted identity propagation from an already-authenticated Domain API, PostgreSQL persistence, and Redis user-context caching. Authentication and action-level authorization are owned by the calling Domain API.
+This solution implements the Entitlements API with trusted identity propagation from an already-authenticated Domain API, PostgreSQL persistence, and in-memory user-context caching. Authentication and action-level authorization are owned by the calling Domain API.
 
 The BFF implementation has been removed. Browser login, session-cookie handling, token storage, proxying, PKCE, and CSRF behavior are outside this solution.
 
@@ -44,7 +44,7 @@ Tenant/program scopes and `scopedRoles` have been removed. The user context retu
 |---|---|
 | `Aperture.Entitlements.Contracts` | User, role, and assignment API contracts |
 | `Aperture.Entitlements.Domain` | User, role, assignment, and outbox entities |
-| `Aperture.Entitlements.Infrastructure` | PostgreSQL, Redis, and application services |
+| `Aperture.Entitlements.Infrastructure` | PostgreSQL, in-memory caching, and application services |
 | `Aperture.Entitlements.Api` | User context and role-administration endpoints |
 | `Aperture.Entitlements.Tests` | Domain, user resolution, and authenticated-user boundary tests |
 
@@ -193,7 +193,6 @@ Use user-secrets locally and AWS Secrets Manager in deployed environments:
 
 ```powershell
 dotnet user-secrets set "ConnectionStrings:EntitlementsDatabase" "Host=localhost;Port=5432;Database=aperture_foundation;Username=postgres;Password=..." --project src/Aperture.Entitlements.Api
-dotnet user-secrets set "ConnectionStrings:Redis" "localhost:6379,abortConnect=false" --project src/Aperture.Entitlements.Api
 ```
 
 ## Build and run
@@ -221,9 +220,9 @@ Use `Aperture.Entitlements.http` for example requests.
 1. The Domain API validates authentication and replaces the trusted identity headers.
 2. The Entitlements API constructs a principal from the verified marker and email.
 3. Requests without an authenticated principal receive `401`; no role/scope authorization is performed here.
-4. Effective, non-revoked roles are loaded from PostgreSQL or Redis when user context is requested.
+4. Effective, non-revoked roles are loaded from PostgreSQL or the local in-memory cache when user context is requested.
 5. The Domain API uses that context for its own authorization decisions.
-6. Role changes increment user context version, remove the Redis entry, and append `EntitlementRevised` to the outbox.
+6. Role changes increment user context version, remove the cached entry, and append `EntitlementRevised` to the outbox.
 
 There is no authorization decision cache, Cerbos dependency, or scoped-role model in this service.
 

@@ -23,17 +23,7 @@ public static class ServiceCollectionExtensions
                 "__EFMigrationsHistory",
                 "entitlement")));
 
-        var redis = Environment.GetEnvironmentVariable("ConnectionStrings__Redis")
-            ?? configuration.GetConnectionString("Redis");
-
-        if (redis is not null)
-            services.AddStackExchangeRedisCache(options =>
-            {
-                options.Configuration = redis;
-                options.InstanceName = "Aperture:Entitlements:";
-            });
-        else
-            services.AddDistributedMemoryCache();
+        services.AddDistributedMemoryCache();
 
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IUserContextCache, UserContextCache>();

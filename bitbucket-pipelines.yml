@@ -7,6 +7,7 @@ options:
 definitions:
   caches:
     nuget: ~/.nuget/packages
+    trivy: ~/.cache/trivy
 
   services:
     docker:
@@ -16,7 +17,7 @@ definitions:
     - step: &ci-validation
         name: CI Validation
         oidc: true
-        deployment: DEV
+        # AWS/CodeArtifact variables available at repository scope (repository variables).
 
         runs-on:
           - self.hosted
@@ -27,6 +28,7 @@ definitions:
 
         caches:
           - nuget
+          - trivy
 
         script:
           - |
@@ -56,6 +58,7 @@ definitions:
 
         caches:
           - nuget
+          - trivy
 
         script:
           - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
@@ -85,6 +88,9 @@ pipelines:
       - step:
           name: Promote DEV Release to QA
           deployment: QA
+          size: 1x
+          clone:
+            depth: full
 
           runs-on:
             - self.hosted
@@ -92,7 +98,7 @@ pipelines:
 
           script:
             - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
-            - ./ci/common/install-tools.sh
+            - ./ci/common/install-tools.sh gitops
             - ./ci/release/promote-qa.sh
 
           artifacts:

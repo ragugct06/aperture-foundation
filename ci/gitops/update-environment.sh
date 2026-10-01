@@ -1,6 +1,28 @@
 #!/usr/bin/env bash
+# Update one environment's image reference in the GitOps repository.
+#
+# Usage (run from the application repository root):
+#   bash ci/gitops/update-environment.sh dev aperture-foundation reports/image-metadata.env
+#   bash ci/gitops/update-environment.sh qa aperture-foundation reports/promoted-image.env
+#
+# Called by: the DEV pipeline or ci/release/promote-qa.sh.
+# Input: a trusted, generated shell file containing RELEASE_TAG, SOURCE_COMMIT,
+#        IMAGE_REPOSITORY, and IMAGE_DIGEST; GitOps credentials come from CI.
+# Flow: load metadata -> clone GitOps -> edit values -> push/reuse branch -> PR.
+# Success: GitOps already has the requested values, or the deployment PR merged.
+# This script does not build/pull an image or wait for the cluster to deploy it.
+#
+# SOURCE_COMMIT identifies application code. DEPLOY_COMMIT identifies the GitOps
+# configuration change. They belong to different repositories.
+
+# Stop on failed commands, unset variables, and failures within shell pipelines.
 set -euo pipefail
 
+# Keep the helper's absolute path because we later cd into the GitOps clone.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 1. Validate inputs and load the image metadata.
+# ${name:?message} stops immediately when an argument/variable is missing or empty.
 DEPLOY_ENV="${1:?deployment environment is required}"
 SERVICE_NAME="${2:?service name is required}"
 METADATA_FILE="${3:?metadata file is required}"
@@ -14,6 +36,7 @@ if [[ ! -f "${METADATA_FILE}" ]]; then
   exit 1
 fi
 
+# source loads shell assignments into this process; use only CI-generated files.
 source "${METADATA_FILE}"
 
 : "${RELEASE_TAG:?RELEASE_TAG is required}"
@@ -28,18 +51,23 @@ GITOPS_BASE_BRANCH="main"
 VALUES_FILE="environments/${DEPLOY_ENV}/${SERVICE_NAME}/values.yaml"
 SHORT_COMMIT="${SOURCE_COMMIT:0:12}"
 
+# Stable branch names let a retry find the same deployment branch and open PR.
+# DEV uses a commit ID because every DEV build shares the release label "dev".
+# QA uses the versioned release tag, for example v1.2.0-beta.3.
 if [[ "${DEPLOY_ENV}" == "dev" ]]; then
   DEPLOY_BRANCH="deploy/${DEPLOY_ENV}/${SERVICE_NAME}/${SHORT_COMMIT}"
 else
   DEPLOY_BRANCH="deploy/${DEPLOY_ENV}/${SERVICE_NAME}/${RELEASE_TAG}"
 fi
 
+# 2. Work in a disposable GitOps clone, leaving the application checkout intact.
 WORK_DIR="$(mktemp -d)"
 
 cleanup() {
   rm -rf "${WORK_DIR}"
 }
 
+# Remove the clone on both success and failure (including its authenticated URL).
 trap cleanup EXIT
 
 echo "========================================="
@@ -68,10 +96,13 @@ fi
 git config user.name "Aperture CI"
 git config user.email "aperture-ci@users.noreply.bitbucket.org"
 
+# Build the desired change from current GitOps main, not an older retry branch.
+# -B creates/resets only the local branch in this disposable clone.
 git checkout -B \
   "${DEPLOY_BRANCH}" \
   "origin/${GITOPS_BASE_BRANCH}"
 
+# The YAML editor below uses Mike Farah's yq v4 syntax (Linux amd64 runner).
 if ! command -v yq >/dev/null 2>&1; then
   echo "Installing yq..."
 
@@ -84,6 +115,8 @@ if ! command -v yq >/dev/null 2>&1; then
   chmod +x /usr/local/bin/yq
 fi
 
+# 3. Update release metadata and pin the image by digest.
+# yq's strenv() reads exported variables as strings, avoiding YAML type inference.
 export RELEASE_TAG
 export SOURCE_COMMIT
 export IMAGE_REPOSITORY
@@ -94,6 +127,7 @@ echo "========================================="
 echo " Updating GitOps values"
 echo "========================================="
 
+# Clear the image tag so the requested digest is the image selection in values.
 yq -i '
   .release.version = strenv(RELEASE_TAG) |
   .release.commit = strenv(SOURCE_COMMIT) |
@@ -102,6 +136,7 @@ yq -i '
   .image.digest = strenv(IMAGE_DIGEST)
 ' "${VALUES_FILE}"
 
+# A retry after a successful merge needs no new commit, push, or PR.
 if git diff --quiet -- "${VALUES_FILE}"; then
   echo "GitOps already references this release."
   exit 0
@@ -116,144 +151,30 @@ git diff -- "${VALUES_FILE}"
 
 git add "${VALUES_FILE}"
 
-git commit \
-  -m "deploy(${SERVICE_NAME}): ${DEPLOY_ENV} ${RELEASE_TAG} [skip ci]"
-
-echo
-echo "========================================="
-echo " Pushing deployment branch"
-echo "========================================="
-
-git push \
-  --force-with-lease \
-  origin \
-  "${DEPLOY_BRANCH}"
-
-echo
-echo "========================================="
-echo " Creating GitOps pull request"
-echo "========================================="
-
-PR_TITLE="deploy(${SERVICE_NAME}): ${DEPLOY_ENV} ${RELEASE_TAG}"
-
-PR_PAYLOAD="$(
-  cat <<JSON
-{
-  "title": "${PR_TITLE}",
-  "source": {
-    "branch": {
-      "name": "${DEPLOY_BRANCH}"
-    }
-  },
-  "destination": {
-    "branch": {
-      "name": "${GITOPS_BASE_BRANCH}"
-    }
-  },
-  "close_source_branch": true
-}
-JSON
-)"
-
-PR_RESPONSE="/tmp/gitops-pr-response.json"
-
-HTTP_CODE="$(
-  curl \
-    --silent \
-    --show-error \
-    --output "${PR_RESPONSE}" \
-    --write-out "%{http_code}" \
-    --request POST \
-    --header "Authorization: Bearer ${GITOPS_ACCESS_TOKEN}" \
-    --header "Content-Type: application/json" \
-    --data "${PR_PAYLOAD}" \
-    "https://api.bitbucket.org/2.0/repositories/${GITOPS_WORKSPACE}/${GITOPS_REPO}/pullrequests"
-)"
-
-if [[ "${HTTP_CODE}" != "201" ]]; then
-  echo "ERROR: Failed to create GitOps PR."
-  echo "HTTP status: ${HTTP_CODE}"
-  cat "${PR_RESPONSE}"
-  exit 1
+# 4. Reuse an identical remote branch, or push the newly prepared change.
+# write-tree identifies the complete staged file tree; COMMIT^{tree} identifies
+# the remote commit's tree. Equal trees mean no content changed, even if a new
+# commit would have a different timestamp. Reuse preserves approvals/builds.
+# A missing remote branch is expected on the first run, hence "|| true".
+REMOTE_COMMIT="$(git rev-parse --verify "refs/remotes/origin/${DEPLOY_BRANCH}" 2>/dev/null || true)"
+if [[ -n "${REMOTE_COMMIT}" && "$(git write-tree)" == "$(git rev-parse "${REMOTE_COMMIT}^{tree}")" ]]; then
+  echo "Reusing unchanged deployment branch."
+  DEPLOY_COMMIT="${REMOTE_COMMIT}"
+else
+  git commit -m "deploy(${SERVICE_NAME}): ${DEPLOY_ENV} ${RELEASE_TAG}"
+  DEPLOY_COMMIT="$(git rev-parse HEAD)"
+  # Replace the remote branch only if it still points to the commit we observed.
+  # An empty REMOTE_COMMIT means the branch must still be absent. A concurrent
+  # update fails the push instead of being overwritten. Do not use plain --force.
+  git push --force-with-lease="refs/heads/${DEPLOY_BRANCH}:${REMOTE_COMMIT}" \
+    origin "HEAD:refs/heads/${DEPLOY_BRANCH}"
 fi
 
-PR_ID="$(
-  jq -r '.id' "${PR_RESPONSE}"
-)"
+# 5. Delegate PR lookup/creation, approval, checks, and merge verification.
+# Pass the GitOps commit so the helper can detect an unexpected PR source change.
+bash "${SCRIPT_DIR}/complete-pull-request.sh" \
+  "${GITOPS_WORKSPACE}" "${GITOPS_REPO}" "${DEPLOY_BRANCH}" \
+  "${GITOPS_BASE_BRANCH}" "${DEPLOY_COMMIT}" \
+  "deploy(${SERVICE_NAME}): ${DEPLOY_ENV} ${RELEASE_TAG}"
 
-if [[ -z "${PR_ID}" || "${PR_ID}" == "null" ]]; then
-  echo "ERROR: Unable to determine GitOps PR ID."
-  cat "${PR_RESPONSE}"
-  exit 1
-fi
-
-echo "Created GitOps PR: ${PR_ID}"
-
-echo
-echo "========================================="
-echo " Approving GitOps pull request"
-echo "========================================="
-
-APPROVE_RESPONSE="/tmp/gitops-pr-approve-response.json"
-
-APPROVE_CODE="$(
-  curl \
-    --silent \
-    --show-error \
-    --output "${APPROVE_RESPONSE}" \
-    --write-out "%{http_code}" \
-    --request POST \
-    --user "${GITOPS_APPROVER_EMAIL}:${GITOPS_APPROVER_TOKEN}" \
-    --header "Accept: application/json" \
-    "https://api.bitbucket.org/2.0/repositories/${GITOPS_WORKSPACE}/${GITOPS_REPO}/pullrequests/${PR_ID}/approve"
-)"
-
-if [[ "${APPROVE_CODE}" != "200" ]]; then
-  echo "ERROR: Failed to approve GitOps PR."
-  echo "HTTP status: ${APPROVE_CODE}"
-  cat "${APPROVE_RESPONSE}"
-  exit 1
-fi
-
-echo "GitOps PR approved."
-
-echo
-echo "========================================="
-echo " Merging GitOps pull request"
-echo "========================================="
-
-MERGE_RESPONSE="/tmp/gitops-pr-merge-response.json"
-
-MERGE_CODE="$(
-  curl \
-    --silent \
-    --show-error \
-    --output "${MERGE_RESPONSE}" \
-    --write-out "%{http_code}" \
-    --request POST \
-    --user "${GITOPS_APPROVER_EMAIL}:${GITOPS_APPROVER_TOKEN}" \
-    --header "Content-Type: application/json" \
-    --header "Accept: application/json" \
-    --data '{"close_source_branch": true}' \
-    "https://api.bitbucket.org/2.0/repositories/${GITOPS_WORKSPACE}/${GITOPS_REPO}/pullrequests/${PR_ID}/merge"
-)"
-
-if [[ "${MERGE_CODE}" != "200" ]]; then
-  echo "ERROR: Failed to merge GitOps PR."
-  echo "HTTP status: ${MERGE_CODE}"
-  cat "${MERGE_RESPONSE}"
-  exit 1
-fi
-
-echo
-echo "========================================="
-echo " GitOps deployment completed"
-echo "========================================="
-echo "PR:          ${PR_ID}"
-echo "Service:     ${SERVICE_NAME}"
-echo "Environment: ${DEPLOY_ENV}"
-echo "Release:     ${RELEASE_TAG}"
-echo "Commit:      ${SOURCE_COMMIT}"
-echo "Digest:      ${IMAGE_DIGEST}"
-echo
-echo "GitOps PR created, approved and merged successfully."
+echo "GitOps updated: ${DEPLOY_ENV}/${SERVICE_NAME} ${RELEASE_TAG} (${IMAGE_DIGEST})"

@@ -226,3 +226,51 @@ Use `Aperture.Entitlements.http` for example requests.
 6. Role changes increment user context version, remove the Redis entry, and append `EntitlementRevised` to the outbox.
 
 There is no authorization decision cache, Cerbos dependency, or scoped-role model in this service.
+
+## Bitbucket delivery pipeline
+
+PRs targeting `main` run the CI script regression tests, restore/build the solution
+including its test project, run application tests, build the runtime image, and
+scan it. PRs targeting other branches are skipped. Image scanning temporarily
+reports fixable HIGH/CRITICAL vulnerabilities without failing on findings
+(`IMAGE_SCAN_EXIT_CODE=0`, the default). Set `IMAGE_SCAN_EXIT_CODE=1` in Bitbucket
+variables to restore blocking on findings. Scanner execution errors still fail
+in either mode. The JSON scan report and TRX test results are published as
+artifacts. NuGet packages and the Trivy database are cached.
+
+Changes on `main` also publish the image to ECR and update DEV through a GitOps
+PR. The manual `promote-to-qa` pipeline reads DEV's GitOps image digest, creates
+or reuses a beta release tag, and promotes that digest to QA without rebuilding.
+Both environments automatically approve and merge their GitOps PR after the
+configured repository merge checks allow it. Success means the GitOps PR has
+merged; it does not verify cluster reconciliation or application health.
+
+Configure these Bitbucket variables before running the pipeline:
+
+| Scope | Variables and permissions |
+| --- | --- |
+| Repository (PR validation) | `AWS_ROLE_ARN`, `AWS_REGION`, `CODEARTIFACT_DOMAIN`, `CODEARTIFACT_DOMAIN_OWNER`, `CODEARTIFACT_REPOSITORY`. The role needs CodeArtifact read access and an OIDC trust policy permitting this repository's non-deployment steps. |
+| DEV deployment | Override `AWS_ROLE_ARN` with the publishing role; configure `AWS_ACCOUNT_ID`, `ECR_REPOSITORY`, and the AWS region. This role also needs CodeArtifact read and ECR publishing access. |
+| DEV and QA deployments | `GITOPS_ACCESS_TOKEN`: repository access token for `anovorx/aperture-gitops` with repository read/write and pull request read/write permissions. |
+| DEV and QA deployments | `GITOPS_APPROVER_EMAIL`, `GITOPS_APPROVER_TOKEN`: a separate account's Atlassian email and API token with `read:pullrequest:bitbucket` and `write:pullrequest:bitbucket` scopes, repository access, and permission to merge into GitOps `main`. |
+| QA deployment | `APP_REPO_ACCESS_TOKEN`: repository access token permitting release tag pushes to this application repository. `RELEASE_VERSION` is supplied when starting promotion, for example `1.2.0`. |
+
+Keep tokens secured and scoped to deployment environments. PR validation no
+longer declares a DEV deployment and cannot read DEV deployment variables.
+Configure required builds/approvals as enforced merge checks in the GitOps
+repository. GitOps commits no longer contain `[skip ci]`, so its validation can
+run. A custom QA pipeline should be started from `main` and restricted through
+Bitbucket deployment permissions.
+
+An unchanged deployment retry preserves its branch commit and reuses the open
+PR. Pending merge checks and asynchronous merge tasks are polled every 10
+seconds for up to 600 seconds. Override these limits using
+`GITOPS_POLL_INTERVAL_SECONDS` and `GITOPS_MERGE_TIMEOUT_SECONDS`. Failed
+approvals, denied API requests, changed PR source commits, and failed merge
+tasks stop the deployment; resolve the reported issue and rerun the step.
+
+Run the offline CI regression tests locally with Python 3, Bash, Git, and jq:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s ci/tests -v
+```

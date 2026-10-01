@@ -3,11 +3,26 @@ set -euo pipefail
 
 echo "=== Installing required CI tools ==="
 
-apt-get update
-apt-get install -y \
-  curl \
-  unzip \
-  jq
+MISSING_PACKAGES=()
+REQUIRED_TOOLS=(curl jq git)
+if [[ "${1:-build}" != "gitops" ]]; then
+  REQUIRED_TOOLS+=(unzip python3)
+fi
+for TOOL in "${REQUIRED_TOOLS[@]}"; do
+  if ! command -v "${TOOL}" >/dev/null 2>&1; then
+    MISSING_PACKAGES+=("${TOOL}")
+  fi
+done
+
+if (( ${#MISSING_PACKAGES[@]} > 0 )); then
+  apt-get update
+  apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"
+fi
+
+# Promotion only reads GitOps and creates a tag; it needs neither AWS nor .NET.
+if [[ "${1:-build}" == "gitops" ]]; then
+  exit 0
+fi
 
 if ! command -v aws >/dev/null 2>&1; then
   ARCH="$(uname -m)"

@@ -8,6 +8,8 @@ echo "=== Running Foundation tests ==="
 dotnet test "${TEST_PROJECT}" \
   --configuration Release \
   --no-build \
-  --no-restore
+  --no-restore \
+  --logger "trx;LogFileName=foundation-tests.trx" \
+  --results-directory TestResults
 
 echo "Tests completed successfully."

@@ -1,0 +1,66 @@
+# Generated files and local workspace noise.
+# These patterns do not change Git tracking and are not a security boundary.
+
+# IDE state
+.vs/
+.vscode/
+.idea/
+.history/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.code-workspace
+
+# .NET build and publish output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Bb]uild/
+app/publish/
+publish/
+artifacts/
+*.dll
+*.exe
+*.pdb
+*.GeneratedMSBuildEditorConfig.editorconfig
+
+# Downloaded packages and caches
+packages/
+.nuget/
+*.nupkg
+*.snupkg
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+
+# Generated CI reports, image/release metadata, and test output
+reports/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.cobertura.xml
+[Bb]uild[Ll]og.*
+MSBuild_*.failure.log
+
+# Local data and environment files; keep example/template env files visible
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Keep appsettings*.json, nuget.config, migrations, scripts/, ci/, and tests/
+# visible: they contain configuration or behavior needed for repository work.
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini

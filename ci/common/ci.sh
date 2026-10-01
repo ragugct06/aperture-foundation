@@ -6,6 +6,7 @@ echo " Running Aperture Foundation CI"
 echo "========================================="
 
 ./ci/common/install-tools.sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s ci/tests -v
 
 source ./ci/common/aws-auth.sh
 source ./ci/common/setup-codeartifact.sh
@@ -13,9 +14,7 @@ source ./ci/common/setup-codeartifact.sh
 ./ci/common/restore.sh
 ./ci/common/build.sh
 
-# TEMPORARY:
-# Re-enable after the application team aligns the test project with the solution.
-# ./ci/common/test.sh
+./ci/common/test.sh
 
 ./ci/common/publish.sh
 ./ci/common/docker-build.sh

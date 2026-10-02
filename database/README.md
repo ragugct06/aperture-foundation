@@ -113,15 +113,15 @@ manages the transaction; do not add transaction-level `BEGIN` or `COMMIT` statem
 ## Local commands and tests
 
 Docker must be installed and running. The runtime image is pinned in
-`ci/database/runtime.sh` to Liquibase 4.33.0, which includes the PostgreSQL JDBC
+`ci/database/runtime.sh` in `aperture-pipeline-templates` to Liquibase 4.33.0, which includes the PostgreSQL JDBC
 driver. Upgrading to Liquibase 5 requires explicit driver packaging; review the
 [official Docker repository](https://github.com/liquibase/docker) before upgrading.
 
 Run an isolated fresh install and repeat update against disposable PostgreSQL 17:
 
 ```sh
-bash ci/database/test-migrations.sh
-bash ci/common/validate-scripts.sh
+bash ../aperture-pipeline-templates/ci/run.sh test-database
+bash ../aperture-pipeline-templates/ci/common/validate-scripts.sh
 ```
 
 The integration test uses working-tree changelogs and disposable credentials,
@@ -135,10 +135,10 @@ CLI (for example with your organization's SSO profile), export `DB_SECRET_ID` an
 `AWS_REGION`, and install AWS CLI, `jq`, and Docker. Then run:
 
 ```sh
-bash ci/database/migrate.sh validate "$(git rev-parse HEAD)"
-bash ci/database/migrate.sh update-sql "$(git rev-parse HEAD)"
+bash ../aperture-pipeline-templates/ci/database/migrate.sh validate "$(git rev-parse HEAD)"
+bash ../aperture-pipeline-templates/ci/database/migrate.sh update-sql "$(git rev-parse HEAD)"
 # Applies changes to the configured database:
-bash ci/database/migrate.sh update "$(git rev-parse HEAD)"
+bash ../aperture-pipeline-templates/ci/database/migrate.sh update "$(git rev-parse HEAD)"
 ```
 
 `validate` checks changelog structure/checksums, not PostgreSQL execution. Review
@@ -185,3 +185,15 @@ from changesets. The disposable PostgreSQL test exercises SQL execution.
    destructive SQL.
 4. Run both test commands above and review compatibility with the application.
    Commit the changelog before using the release-pinned migration runner.
+
+### Shared runner
+
+The reusable Liquibase runner now lives in `aperture-pipeline-templates`.
+Foundation owns `database/test-migrations.sh`, sourced by the shared PostgreSQL
+harness to check Entitlements tables, seeds, repeat updates, and rollback behavior.
+Set `DATABASE_ENABLED=true` and `DATABASE_TEST_SCRIPT=database/test-migrations.sh`
+in `ci/service.env`. The local commands above use the sibling template checkout;
+`.pipeline-tools` can be used instead after `bash ci/bootstrap.sh` downloads the
+published release. Install the template's Python test requirements for offline
+regressions. Direct local migration commands use your existing AWS credentials;
+the pipeline dispatcher sets up OIDC automatically inside Bitbucket.

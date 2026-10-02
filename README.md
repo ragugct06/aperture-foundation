@@ -217,18 +217,29 @@ There is no authorization decision cache, Cerbos dependency, or scoped-role mode
 
 ## Bitbucket delivery pipeline
 
-All PRs and `main` pushes run offline shell syntax and CI regression tests in a
-lightweight step without AWS authentication or Docker. Changes only to
-`ci/gitops/`, `ci/release/`, `ci/tests/`, `bitbucket-pipelines.yml`, or documentation
-do not build the application, publish an image, or deploy DEV. Database, persistence,
-domain, and pipeline YAML changes also run an isolated PostgreSQL migration test.
+Pipeline implementation is maintained in `anovorx/aperture-pipeline-templates`,
+pinned to `v1.0.0` by both `bitbucket-pipelines.yml` and `ci/template-version`.
+`ci/bootstrap.sh` fetches the tagged scripts into ignored `.pipeline-tools/`.
+`ci/service.env` supplies Foundation's project paths, service name, and database hook.
 
-Application projects/tests, solution/package/build configuration, Docker inputs,
-and the explicitly listed build/publication scripts trigger full validation for
-PRs targeting `main`. On `main` they trigger full validation plus ECR publication
-and DEV deployment. The path list is shared in `bitbucket-pipelines.yml`; update
-it when changing build exclusions. Other PR targets run
-the offline checks and, when relevant, the database check. Image scanning temporarily
+PR validation, main/DEV delivery, and custom workflows without inputs use shared
+imports. Manual workflows accepting `RELEASE_TAG`, `SOURCE_REF`, or `IMAGE_COMMIT`
+keep thin local wrappers because Bitbucket documents a shared-import limitation
+with UI-entered custom variables. Their implementation still lives in the template.
+
+All PRs and `main` pushes run service configuration and shell syntax validation
+without AWS authentication or Docker. Shared script regression tests run in the
+template repository. Changes only to the pipeline YAML, bootstrap/version pin,
+documentation, or database files do not build or deploy the application. Database,
+persistence, domain, service configuration, and pipeline YAML changes run the
+isolated PostgreSQL migration test. Foundation's schema assertions remain in
+`database/test-migrations.sh` and run through the shared database harness.
+
+Application changes and `ci/service.env` changes trigger full validation for PRs
+targeting `main`, and full validation plus ECR publication/DEV deployment on `main`.
+The change filters are maintained in the exported template YAML.
+Other PR targets run
+configuration validation and, when relevant, the database check. Image scanning temporarily
 reports fixable HIGH/CRITICAL vulnerabilities without failing on findings
 (`IMAGE_SCAN_EXIT_CODE=0`, the default). Set `IMAGE_SCAN_EXIT_CODE=1` in Bitbucket
 variables to restore blocking on findings. Scanner execution errors still fail
@@ -296,8 +307,8 @@ Manual pipelines provide explicit validation and recovery:
 | `build-and-deploy-dev` | Force a full build and DEV delivery regardless of changed paths. |
 | `deploy-existing-dev-image` | Supply `IMAGE_COMMIT`, the original full application commit SHA used as an ECR tag. Resolve its existing digest, apply its migrations, and update DEV GitOps; no application build or ECR push. |
 
-For a GitOps fix, run `deploy-existing-dev-image` from a revision containing the
-fixed scripts and select the original image's commit. This can resume its open
+For a GitOps fix, run `deploy-existing-dev-image` from a revision selecting the
+fixed template release and select the original image's commit. This can resume its open
 deployment PR. Selecting an older image intentionally redeploys that image;
 it does not roll back the database. Images whose commit predates `database/`
 cannot use this migration-enabled deployment flow.
@@ -313,6 +324,7 @@ Configure these Bitbucket variables before running the pipeline:
 
 | Scope | Variables and permissions |
 | --- | --- |
+| Repository (all steps) | Secured `PIPELINE_TEMPLATE_ACCESS_TOKEN`: access token for `anovorx/aperture-pipeline-templates` with Repository Read only. YAML import access does not grant Git clone access. |
 | Repository (PR validation) | `AWS_ROLE_ARN`, `AWS_REGION`, `CODEARTIFACT_DOMAIN`, `CODEARTIFACT_DOMAIN_OWNER`, `CODEARTIFACT_REPOSITORY`. The role needs CodeArtifact read access and an OIDC trust policy permitting this repository's non-deployment steps. |
 | DEV deployment | Override `AWS_ROLE_ARN` with the publishing role; configure `AWS_ACCOUNT_ID`, `ECR_REPOSITORY`, and the AWS region. This role also needs CodeArtifact read and ECR publishing access. |
 | DEV, QA (QE), UAT, and PROD deployments | `GITOPS_ACCESS_TOKEN`: repository access token for `anovorx/aperture-gitops` with repository read/write and pull request read/write permissions. |
@@ -324,7 +336,7 @@ Keep tokens secured and scoped to deployment environments. PR validation no
 longer declares a DEV deployment and cannot read DEV deployment variables.
 Configure required builds/approvals as enforced merge checks in the GitOps
 repository. GitOps commits no longer contain `[skip ci]`, so its validation can
-run. Start promotion pipelines from `main` containing the current orchestration scripts,
+run. Start promotion pipelines from `main` selecting the intended template release,
 and restrict them through Bitbucket deployment permissions. `RELEASE_TAG` selects
 the artifact and migrations independently of the pipeline checkout commit.
 
@@ -335,8 +347,38 @@ seconds for up to 600 seconds. Override these limits using
 approvals, denied API requests, changed PR source commits, and failed merge
 tasks stop the deployment; resolve the reported issue and rerun the step.
 
-Run the offline CI regression tests locally with Python 3, Bash, Git, and jq:
+### Runner capacity
+
+The defaults target a dedicated `t3.large` host with 8 GB RAM: `size: 1x`
+(4 GB total step budget), including `docker.memory: 2048` (2 GB for Docker,
+leaving 2 GB for the build container when Docker is enabled). Allow only one
+active step across all runner registrations on that host, leaving capacity for
+the OS, Docker daemon, and runner processes. Enforce this in the runner setup;
+pipeline YAML does not enforce host-wide concurrency. Verify application builds
+and PostgreSQL/Liquibase tests under these limits before increasing concurrency.
+
+### Template cutover and local validation
+
+Publish and test the template repository, then create its immutable `v1.0.0` tag
+and configure `PIPELINE_TEMPLATE_ACCESS_TOKEN` **before pushing this application's
+migration branch**. Bitbucket must resolve the template tag to load the pipeline.
+Run `validate-build`, verify DEV delivery, and exercise manual workflows in a
+nonproduction environment before the next production release.
+
+For a template upgrade, update the import and `ci/template-version` together in a
+reviewed change. Never move published template tags. A version-only edit does not
+automatically deploy DEV; use `validate-build` for verification. See the template
+repository README for release, onboarding, and rollback instructions.
+
+From this checkout, with Python 3/PyYAML, Bash, Git, jq, and curl installed:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s ci/tests -v
+bash ../aperture-pipeline-templates/ci/run.sh validate-config
+# Requires a running Docker daemon; exercises Foundation's database hook.
+bash ../aperture-pipeline-templates/ci/run.sh test-database
+# Shared offline regression suite; install its ci/requirements-test.txt first.
+bash ../aperture-pipeline-templates/ci/common/validate-scripts.sh
 ```
+
+To fetch the published template instead, export the secured read-only token locally,
+run `bash ci/bootstrap.sh`, and use `.pipeline-tools/ci/run.sh` for those commands.

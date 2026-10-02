@@ -6,3 +6,6 @@
 **/*.user
 **/*.suo
 tests/
+
+# Downloaded shared pipeline tools (including temporary downloads)
+.pipeline-tools*/

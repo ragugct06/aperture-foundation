@@ -1,147 +1,41 @@
+# Input-bearing custom pipelines stay local because Bitbucket shared imports do not
+# reliably forward UI-entered variables. All implementation lives in the template.
 image: mcr.microsoft.com/dotnet/sdk:10.0
-
 options:
   max-time: 45
-  size: 2x
-
+  size: 1x
 definitions:
-  caches:
-    nuget: ~/.nuget/packages
-    trivy: ~/.cache/trivy
-
+  imports:
+    aperture: aperture-pipeline-templates:v1.0.0
   services:
     docker:
-      memory: 3072
-
+      memory: 2048
   steps:
-    - step: &database-validation
-        name: Validate Liquibase on PostgreSQL
-        runs-on:
-          - self.hosted
-          - linux
-        services:
-          - docker
-        script:
-          - bash ci/common/install-tools.sh gitops
-          - bash ci/database/test-migrations.sh
-
-    # Always validate CI changes without AWS credentials or a Docker service.
-    - step: &script-validation
-        name: Validate CI Scripts
+    - step: &validate-config
+        name: Validate Service Pipeline Configuration
         size: 1x
-        runs-on:
-          - self.hosted
-          - linux
+        runs-on: [self.hosted, linux]
         script:
-          - bash ci/common/install-tools.sh scripts
-          - bash ci/common/validate-scripts.sh
-
-    - step: &ci-validation
-        name: CI Validation
+          - bash ci/bootstrap.sh
+          - bash .pipeline-tools/ci/run.sh validate-config
+    - step: &release-step
+        name: Release Action
         oidc: true
-        # AWS/CodeArtifact variables available at repository scope (repository variables).
-
-        runs-on:
-          - self.hosted
-          - linux
-
-        services:
-          - docker
-
-        caches:
-          - nuget
-          - trivy
-
+        size: 1x
+        clone:
+          depth: full
+        runs-on: [self.hosted, linux]
         script:
-          - |
-            if [ -n "${BITBUCKET_PR_ID:-}" ] && [ "${BITBUCKET_PR_DESTINATION_BRANCH:-}" != "main" ]; then
-              echo "PR is not targeting main. Skipping validation."
-              exit 0
-            fi
-
-          - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
-          - source ./ci/common/ci.sh
-
+          - bash ci/bootstrap.sh
         artifacts:
-          - TestResults/**
           - reports/**
-
-    - step: &dev-deploy
-        name: Build, Scan and Deploy DEV
-        oidc: true
-        deployment: DEV
-
-        runs-on:
-          - self.hosted
-          - linux
-
-        services:
-          - docker
-
-        caches:
-          - nuget
-          - trivy
-
-        script:
-          - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
-          - source ./ci/common/ci.sh
-          - ./ci/ecr/publish-dev.sh
-          - bash ci/database/migrate.sh update "${BITBUCKET_COMMIT}"
-          - ./ci/gitops/update-environment.sh dev aperture-foundation reports/image-metadata.env
-
-        artifacts:
-          - TestResults/**
-          - reports/**
-
 pipelines:
   pull-requests:
     '**':
-      - step: *script-validation
-      - step:
-          <<: *database-validation
-          condition: &database-changes
-            changesets:
-              includePaths:
-                - "database/**"
-                - "ci/database/**"
-                - "Aperture.Entitlements.Infrastructure/Persistence/**"
-                - "Aperture.Entitlements.Domain/**"
-                - "bitbucket-pipelines.yml"
-      - step:
-          <<: *ci-validation
-          # YAML/GitOps/release-only changes use the lightweight step above.
-          # Use custom validate-build when changing orchestration needs a full run.
-          condition: &application-changes
-            changesets:
-              # Skip full builds only when every changed file is excluded.
-              # New application paths and mixed application/CI changes still build.
-              excludePaths:
-                - "ci/gitops/**"
-                - "ci/release/**"
-                - "ci/tests/**"
-                - "ci/common/validate-scripts.sh"
-                - "ci/ecr/read-existing-image.sh"
-                - "bitbucket-pipelines.yml"
-                - "README.md"
-                - "CLAUDE.md"
-                - ".claudecodeignore"
-                - ".gitignore"
-                - "scripts/**"
-                # Schema-only changes use the manual migrate-*-db
-                # pipelines below, without building or publishing an app image.
-                - "database/**"
-                - "ci/database/**"
-
+      import: validate-service@aperture
   branches:
     main:
-      - step: *script-validation
-      - step:
-          <<: *database-validation
-          condition: *database-changes
-      - step:
-          <<: *dev-deploy
-          condition: *application-changes
-
+      import: deploy-dev@aperture
   custom:
     create-beta-tag:
       - variables:
@@ -149,268 +43,136 @@ pipelines:
             description: "Tag to create, for example 1.0.0-beta.1"
           - name: SOURCE_REF
             description: "Full 40-character tested main commit SHA"
-      - step: *script-validation
+      - step: *validate-config
       - step:
+          <<: *release-step
           name: Create BETA Release Tag (No Deployment)
-          oidc: true
           deployment: QA
-          size: 1x
-          clone:
-            depth: full
-          runs-on:
-            - self.hosted
-            - linux
           script:
-            - bash ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - bash ci/release/create-tag.sh qe
-          artifacts:
-            - reports/**
-
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh create-tag qe
     create-rc-tag:
       - variables:
           - name: RELEASE_TAG
             description: "Tag to create, for example 1.0.0-rc.1"
           - name: SOURCE_REF
             description: "Approved beta tag, for example 1.0.0-beta.1"
-      - step: *script-validation
+      - step: *validate-config
       - step:
+          <<: *release-step
           name: Create RC Release Tag (No Deployment)
-          oidc: true
           deployment: UAT
-          size: 1x
-          clone:
-            depth: full
-          runs-on:
-            - self.hosted
-            - linux
           script:
-            - bash ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - bash ci/release/create-tag.sh uat
-          artifacts:
-            - reports/**
-
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh create-tag uat
     create-prod-tag:
       - variables:
           - name: RELEASE_TAG
             description: "Tag to create, for example 1.0.0"
           - name: SOURCE_REF
             description: "Approved RC tag, for example 1.0.0-rc.1"
-      - step: *script-validation
+      - step: *validate-config
       - step:
+          <<: *release-step
           name: Create PROD Release Tag (No Deployment)
-          oidc: true
           deployment: PROD
-          size: 1x
-          clone:
-            depth: full
-          runs-on:
-            - self.hosted
-            - linux
           script:
-            - bash ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - bash ci/release/create-tag.sh prod
-          artifacts:
-            - reports/**
-
-    # Explicit database-only delivery. DEV uses its pipeline commit; other environments use an existing release tag.
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh create-tag prod
     migrate-dev-db:
-      - step: *database-validation
-      - step:
-          name: Migrate DEV Database
-          oidc: true
-          deployment: DEV
-          runs-on:
-            - self.hosted
-            - linux
-          services:
-            - docker
-          script:
-            - bash ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - bash ci/database/migrate.sh update "${BITBUCKET_COMMIT}"
-
+      import: migrate-dev-db@aperture
     migrate-qe-db:
       - variables:
           - name: RELEASE_TAG
             description: "Existing release tag, for example 1.0.0-beta.1"
-      - step: *script-validation
+      - step: *validate-config
       - step:
+          <<: *release-step
           name: Migrate QE Tagged Release
-          oidc: true
           deployment: QA
-          size: 1x
-          clone:
-            depth: full
-          runs-on:
-            - self.hosted
-            - linux
-          services:
-            - docker
+          services: [docker]
           script:
-            - bash ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - bash ci/database/migrate-tag.sh qe
-          artifacts:
-            - reports/**
-
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh migrate-tag qe
     migrate-uat-db:
       - variables:
           - name: RELEASE_TAG
             description: "Existing release tag, for example 1.0.0-rc.1"
-      - step: *script-validation
+      - step: *validate-config
       - step:
+          <<: *release-step
           name: Migrate UAT Tagged Release
-          oidc: true
           deployment: UAT
-          size: 1x
-          clone:
-            depth: full
-          runs-on:
-            - self.hosted
-            - linux
-          services:
-            - docker
+          services: [docker]
           script:
-            - bash ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - bash ci/database/migrate-tag.sh uat
-          artifacts:
-            - reports/**
-
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh migrate-tag uat
     migrate-prod-db:
       - variables:
           - name: RELEASE_TAG
             description: "Existing release tag, for example 1.0.0"
-      - step: *script-validation
+      - step: *validate-config
       - step:
+          <<: *release-step
           name: Migrate PROD Tagged Release
-          oidc: true
           deployment: PROD
-          size: 1x
-          clone:
-            depth: full
-          runs-on:
-            - self.hosted
-            - linux
-          services:
-            - docker
+          services: [docker]
           script:
-            - bash ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - bash ci/database/migrate-tag.sh prod
-          artifacts:
-            - reports/**
-
-    # Explicit full validation for pipeline YAML and orchestration changes.
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh migrate-tag prod
     validate-build:
-      - step: *script-validation
-      - step: *database-validation
-      - step: *ci-validation
-
-    # Recovery for missed/failed delivery or an intentional full rebuild.
+      import: validate-build@aperture
     build-and-deploy-dev:
-      - step: *script-validation
-      - step: *database-validation
-      - step: *dev-deploy
-
-    # Run from a commit containing the GitOps fix; select the ORIGINAL image's
-    # application commit, not this pipeline's BITBUCKET_COMMIT. No build/push.
+      import: build-and-deploy-dev@aperture
     deploy-existing-dev-image:
       - variables:
           - name: IMAGE_COMMIT
             description: "Full application commit SHA used as the existing ECR image tag"
-      - step: *script-validation
+      - step: *validate-config
       - step:
+          <<: *release-step
           name: Deploy Existing DEV Image
-          oidc: true
           deployment: DEV
-          size: 1x
-          services:
-            - docker
-          runs-on:
-            - self.hosted
-            - linux
+          services: [docker]
           script:
-            - chmod +x ci/common/*.sh ci/ecr/*.sh ci/gitops/*.sh ci/release/*.sh
-            - ./ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - ./ci/ecr/read-existing-image.sh
-            - bash ci/database/migrate.sh update "${IMAGE_COMMIT}"
-            - ./ci/gitops/update-environment.sh dev aperture-foundation reports/image-metadata.env
-          artifacts:
-            - reports/**
-
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh deploy-existing-dev
     promote-to-qe:
       - variables:
           - name: RELEASE_TAG
             description: "Existing release tag, for example 1.0.0-beta.1"
-      - step: *script-validation
+      - step: *validate-config
       - step:
+          <<: *release-step
           name: Promote QE Tagged Release
-          oidc: true
           deployment: QA
-          size: 1x
-          clone:
-            depth: full
-          runs-on:
-            - self.hosted
-            - linux
-          services:
-            - docker
+          services: [docker]
           script:
-            - bash ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - bash ci/release/promote.sh qe
-          artifacts:
-            - reports/**
-
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh promote qe
     promote-to-uat:
       - variables:
           - name: RELEASE_TAG
             description: "Existing release tag, for example 1.0.0-rc.1"
-      - step: *script-validation
+      - step: *validate-config
       - step:
+          <<: *release-step
           name: Promote UAT Tagged Release
-          oidc: true
           deployment: UAT
-          size: 1x
-          clone:
-            depth: full
-          runs-on:
-            - self.hosted
-            - linux
-          services:
-            - docker
+          services: [docker]
           script:
-            - bash ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - bash ci/release/promote.sh uat
-          artifacts:
-            - reports/**
-
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh promote uat
     promote-to-prod:
       - variables:
           - name: RELEASE_TAG
             description: "Existing release tag, for example 1.0.0"
-      - step: *script-validation
+      - step: *validate-config
       - step:
+          <<: *release-step
           name: Promote PROD Tagged Release
-          oidc: true
           deployment: PROD
-          size: 1x
-          clone:
-            depth: full
-          runs-on:
-            - self.hosted
-            - linux
-          services:
-            - docker
+          services: [docker]
           script:
-            - bash ci/common/install-tools.sh aws
-            - source ./ci/common/aws-auth.sh
-            - bash ci/release/promote.sh prod
-          artifacts:
-            - reports/**
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh promote prod

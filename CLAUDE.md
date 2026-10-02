@@ -27,13 +27,8 @@ contracts from an assumed specification as part of routine maintenance.
 | `Aperture.Entitlements.Domain/` | User, role, assignment, and outbox entities |
 | `Aperture.Entitlements.Infrastructure/` | Application services, EF Core persistence and historical migrations, Redis cache |
 | `tests/Aperture.Entitlements.Tests/` | xUnit application tests |
-| `ci/common/` | Tool setup, restore/build/test, publish, Docker build, vulnerability scan |
-| `ci/ecr/` | DEV image publication and image metadata |
-| `ci/gitops/` | Read/update environment values and complete deployment PRs |
-| `ci/release/` | Tag resolution and QE/UAT/production promotion |
-| `ci/tests/` | Offline Python regression tests for CI scripts |
+| `ci/` | Service configuration, template version, and read-only bootstrap; shared implementation is in `../aperture-pipeline-templates` |
 | `database/` | Authoritative Liquibase changelog, SQL changesets, and migration guide |
-| `ci/database/` | Release-pinned migration runner and disposable PostgreSQL validation |
 | `scripts/` | Legacy SQL and operational role provisioning references |
 | `DockerFile` | Runtime image consuming `app/publish/`; filename is case-sensitive |
 
@@ -70,13 +65,14 @@ dotnet run --project Aperture.Entitlements.Api/Aperture.Entitlements.Api.csproj
 
 `nuget.config` contains both CodeArtifact and a Windows-specific local SDK feed.
 Check enabled sources before diagnosing restore failures on another OS. CI configures
-CodeArtifact through `ci/common/setup-codeartifact.sh`; do not commit tokens written
+CodeArtifact through the shared template's `ci/common/setup-codeartifact.sh`; do not commit tokens written
 into NuGet configuration during setup.
 
-Offline CI regression tests require Python 3, Bash, Git, and jq:
+Offline CI regression tests require Python 3, PyYAML (see the template's
+`ci/requirements-test.txt`), Bash, Git, and jq:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s ci/tests -v
+bash ../aperture-pipeline-templates/ci/common/validate-scripts.sh
 ```
 
 For script edits, also run `bash -n` on each changed script and `git diff --check`.
@@ -149,7 +145,7 @@ use the offline tests when validating changes locally.
   `migrate-qe-db`, `migrate-uat-db`, and `migrate-prod-db` resolve RELEASE_TAG.
   Use additive changes compatible with the running application.
 - See `database/README.md` for credentials, provisioning, and recovery. Do not run
-  live updates during local verification. Use `bash ci/database/test-migrations.sh`
+  live updates during local verification. Use `bash ../aperture-pipeline-templates/ci/run.sh test-database`
   with Docker for fresh-install and repeat-update verification.
 
 ## Generated files

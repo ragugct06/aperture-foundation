@@ -49,3 +49,6 @@ publish/
 *.code-workspace
 .history/
 TestResults/
+
+# Downloaded shared pipeline tools (including temporary downloads)
+.pipeline-tools*/

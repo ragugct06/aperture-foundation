@@ -197,3 +197,42 @@ in `ci/service.env`. The local commands above use the sibling template checkout;
 published release. Install the template's Python test requirements for offline
 regressions. Direct local migration commands use your existing AWS credentials;
 the pipeline dispatcher sets up OIDC automatically inside Bitbucket.
+## Manual rollback pipelines
+
+Use `rollback-dev-db`, `rollback-qe-db`, `rollback-uat-db`, or `rollback-prod-db`.
+QE uses the existing QA deployment. These pipelines use each environment's AWS
+secret and deployment permissions; they never update GitOps or deploy an image.
+Restrict UAT/PROD deployment access before enabling execution.
+
+1. Run with `MODE=preview`, `MIGRATION_REF` set to the deployed release tag or full
+   commit SHA containing the changes being undone, and a positive `ROLLBACK_COUNT`.
+   This is the source containing rollback definitions, not the older release you
+   want to return to. All environments accept a full SHA. Tag inputs must match
+   the target release type (DEV/QE beta, UAT RC, production final).
+2. Review `reports/rollback/preview.sql` and `plan.json` in the pipeline artifacts.
+   The plan lists the exact changesets in rollback order and a `preview_id`.
+3. Run the same pipeline with the same inputs, `MODE=execute`, and `PREVIEW_ID`
+   copied from that reviewed plan. The script regenerates the preview and checks
+   its SQL, migration commit, target connection, count, tool version, and complete
+   database migration history against the identifier. A mismatch stops execution.
+4. Review `result.txt` and `history-after.json`. If execution fails, some earlier
+   changesets may already have rolled back. Inspect history and generate a new
+   preview before retrying; do not reuse a failed plan blindly.
+
+The preview identifier binds the reviewed plan; it is not an authorization token
+or proof of human approval. Bitbucket deployment permissions govern execution.
+Preview artifacts can contain data from migration SQL and connection metadata;
+limit repository/artifact access to authorized operators. They contain no fetched
+passwords. There is no automatic rollback after a failed application deployment.
+
+Serialize all migrations and rollbacks through the same deployment environment.
+History is checked immediately before Liquibase runs, but this check and Liquibase
+lock acquisition are separate operations. Do not run independent/manual database
+migrations concurrently. The plan checks migration history, not changes to ordinary
+application data. Coordinate application compatibility and take a recoverable backup
+before destructive rollback. A later update can reapply rolled-back changesets.
+
+The initial three changesets have destructive rollbacks: count 1 deletes the seeded
+roles (and fails if assignments reference them); count 2 also drops user credentials;
+count 3 also drops the remaining application tables. The schema is preserved.
+These counts assume exactly those three changesets are currently applied.

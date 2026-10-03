@@ -6,7 +6,7 @@ options:
   size: 1x
 definitions:
   imports:
-    aperture: aperture-pipeline-templates:v1.0.0
+    aperture: aperture-pipeline-templates:v1.1.0
   services:
     docker:
       memory: 2048
@@ -37,6 +37,134 @@ pipelines:
     main:
       import: deploy-dev@aperture
   custom:
+    rollback-dev-db:
+      - variables:
+          - name: MIGRATION_REF
+            description: "Deployed release tag or full SHA containing the changes being undone"
+          - name: ROLLBACK_COUNT
+            default: "1"
+          - name: MODE
+            default: preview
+            allowed-values:
+              - preview
+              - execute
+          - name: PREVIEW_ID
+            default: ""
+            description: "Required for execute: identifier from the reviewed preview"
+      - step: *validate-config
+      - step:
+          name: Rollback DEV Database
+          oidc: true
+          deployment: DEV
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          services:
+            - docker
+          script:
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh rollback-db dev
+          artifacts:
+            - reports/rollback/**
+
+    rollback-qe-db:
+      - variables:
+          - name: MIGRATION_REF
+            description: "Deployed release tag or full SHA containing the changes being undone"
+          - name: ROLLBACK_COUNT
+            default: "1"
+          - name: MODE
+            default: preview
+            allowed-values:
+              - preview
+              - execute
+          - name: PREVIEW_ID
+            default: ""
+            description: "Required for execute: identifier from the reviewed preview"
+      - step: *validate-config
+      - step:
+          name: Rollback QE Database
+          oidc: true
+          deployment: QA
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          services:
+            - docker
+          script:
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh rollback-db qe
+          artifacts:
+            - reports/rollback/**
+
+    rollback-uat-db:
+      - variables:
+          - name: MIGRATION_REF
+            description: "Deployed release tag or full SHA containing the changes being undone"
+          - name: ROLLBACK_COUNT
+            default: "1"
+          - name: MODE
+            default: preview
+            allowed-values:
+              - preview
+              - execute
+          - name: PREVIEW_ID
+            default: ""
+            description: "Required for execute: identifier from the reviewed preview"
+      - step: *validate-config
+      - step:
+          name: Rollback UAT Database
+          oidc: true
+          deployment: UAT
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          services:
+            - docker
+          script:
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh rollback-db uat
+          artifacts:
+            - reports/rollback/**
+
+    rollback-prod-db:
+      - variables:
+          - name: MIGRATION_REF
+            description: "Deployed release tag or full SHA containing the changes being undone"
+          - name: ROLLBACK_COUNT
+            default: "1"
+          - name: MODE
+            default: preview
+            allowed-values:
+              - preview
+              - execute
+          - name: PREVIEW_ID
+            default: ""
+            description: "Required for execute: identifier from the reviewed preview"
+      - step: *validate-config
+      - step:
+          name: Rollback PROD Database
+          oidc: true
+          deployment: PROD
+          clone:
+            depth: full
+          runs-on:
+            - self.hosted
+            - linux
+          services:
+            - docker
+          script:
+            - bash ci/bootstrap.sh
+            - bash .pipeline-tools/ci/run.sh rollback-db prod
+          artifacts:
+            - reports/rollback/**
+
     create-beta-tag:
       - variables:
           - name: RELEASE_TAG

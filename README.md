@@ -218,7 +218,7 @@ There is no authorization decision cache, Cerbos dependency, or scoped-role mode
 ## Bitbucket delivery pipeline
 
 Pipeline implementation is maintained in `anovorx/aperture-pipeline-templates`,
-pinned to `v1.0.0` by both `bitbucket-pipelines.yml` and `ci/template-version`.
+pinned to `v1.1.0` by both `bitbucket-pipelines.yml` and `ci/template-version`.
 `ci/bootstrap.sh` fetches the tagged scripts into ignored `.pipeline-tools/`.
 `ci/service.env` supplies Foundation's project paths, service name, and database hook.
 
@@ -301,6 +301,7 @@ Manual pipelines provide explicit validation and recovery:
 | Pipeline | Purpose |
 | --- | --- |
 | `validate-build` | Run full application/image validation regardless of changed paths; no ECR push or deployment. Use for pipeline YAML/orchestration edits that need a full exercise. |
+| `rollback-dev-db`, `rollback-qe-db`, `rollback-uat-db`, `rollback-prod-db` | Database-only rollback. Start with `MODE=preview`, `MIGRATION_REF`, and `ROLLBACK_COUNT`; review the artifact, then execute with its `PREVIEW_ID`. See [rollback instructions](database/README.md#manual-rollback-pipelines). |
 | `migrate-dev-db` | Validate on disposable PostgreSQL, then migrate DEV using the selected pipeline commit; no application deployment. |
 | `migrate-qe-db`, `migrate-uat-db`, `migrate-prod-db` | Supply `RELEASE_TAG`; apply that tag's changelog to the target database without image lookup or GitOps changes. |
 | `promote-to-qe`, `promote-to-uat`, `promote-to-prod` | Supply `RELEASE_TAG`; resolve the existing image, migrate the database, then update GitOps. |
@@ -359,7 +360,7 @@ and PostgreSQL/Liquibase tests under these limits before increasing concurrency.
 
 ### Template cutover and local validation
 
-Publish and test the template repository, then create its immutable `v1.0.0` tag
+Publish and test the template repository, then create its immutable `v1.1.0` tag
 and configure `PIPELINE_TEMPLATE_ACCESS_TOKEN` **before pushing this application's
 migration branch**. Bitbucket must resolve the template tag to load the pipeline.
 Run `validate-build`, verify DEV delivery, and exercise manual workflows in a

@@ -144,6 +144,10 @@ use the offline tests when validating changes locally.
 - Database-only changes skip image builds. `migrate-dev-db` uses BITBUCKET_COMMIT;
   `migrate-qe-db`, `migrate-uat-db`, and `migrate-prod-db` resolve RELEASE_TAG.
   Use additive changes compatible with the running application.
+- Manual `rollback-*-db` pipelines preview first and require the reviewed PREVIEW_ID
+  for execution. They bind source/SQL and database history, use environment secrets,
+  and never deploy the application. Do not run independent migrations concurrently
+  with rollback; history checking and Liquibase lock acquisition are separate.
 - See `database/README.md` for credentials, provisioning, and recovery. Do not run
   live updates during local verification. Use `bash ../aperture-pipeline-templates/ci/run.sh test-database`
   with Docker for fresh-install and repeat-update verification.

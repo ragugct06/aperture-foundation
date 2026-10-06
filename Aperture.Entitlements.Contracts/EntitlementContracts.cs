@@ -75,8 +75,8 @@ public sealed class CreateRoleRequest
     [Required, RegularExpression("^[A-Za-z][A-Za-z0-9._-]{1,99}$")]
     public string Key { get; init; } = string.Empty;
 
-    [Required, StringLength(500)]
-    public string Description { get; init; } = string.Empty;
+    [StringLength(500)]
+    public string? Description { get; init; }
 }
 
 public sealed class UpdateRoleRequest

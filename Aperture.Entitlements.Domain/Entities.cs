@@ -57,11 +57,11 @@ public sealed class Role
     public DateTimeOffset CreatedAt { get; private set; }
     public ICollection<RoleAssignment> Assignments { get; private set; } = [];
 
-    public static Role Create(string key, string description, DateTimeOffset now) => new()
+    public static Role Create(string key, string? description, DateTimeOffset now) => new()
     {
         RoleId = Guid.NewGuid(),
         RoleKey = key.Trim(),
-        Description = description.Trim(),
+        Description = description?.Trim() ?? string.Empty,
         CreatedAt = now
     };
 

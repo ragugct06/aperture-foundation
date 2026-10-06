@@ -65,8 +65,9 @@ public sealed class Role
         CreatedAt = now
     };
 
-    public void Update(string description, string status)
+    public void Update(string description, string status, string? key = null)
     {
+        if (!string.IsNullOrWhiteSpace(key)) RoleKey = key.Trim();
         Description = description.Trim();
         Status = status;
     }

@@ -52,7 +52,7 @@ public sealed class EntitlementAdministrationService(
     {
         var entity = await db.Roles.SingleOrDefaultAsync(x => x.RoleId == id, ct);
         if (entity is null) return null;
-        entity.Update(request.Description, request.Status);
+        entity.Update(request.Description, request.Status, request.Key);
         await TouchAssignedUsersAsync(id, ct);
         await db.SaveChangesAsync(ct);
         return Map(entity);

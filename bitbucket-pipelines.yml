@@ -29,13 +29,60 @@ definitions:
           - bash ci/bootstrap.sh
         artifacts:
           - reports/**
+    - step: &test-database
+        name: Validate Liquibase on PostgreSQL
+        runs-on: [self.hosted, linux]
+        services: [docker]
+        script:
+          - bash ci/bootstrap.sh
+          - bash .pipeline-tools/ci/run.sh test-database
+    - step: &deploy-dev-app
+        name: Build, Scan and Deploy DEV Application
+        oidc: true
+        deployment: DEV
+        runs-on: [self.hosted, linux]
+        services: [docker]
+        caches: [nuget, trivy]
+        script:
+          - bash ci/bootstrap.sh
+          - bash ci/deploy-dev-app.sh build
+        artifacts:
+          - TestResults/**
+          - reports/**
+  caches:
+    nuget: ~/.nuget/packages
+    trivy: ~/.cache/trivy
 pipelines:
   pull-requests:
     '**':
       import: validate-service@aperture
   branches:
     main:
-      import: deploy-dev@aperture
+      - step: *validate-config
+      - step:
+          <<: *test-database
+          condition:
+            changesets:
+              includePaths:
+                - database/**
+                - ci/**
+                - '**/Persistence/**'
+                - '*.Domain/**'
+                - bitbucket-pipelines.yml
+      - step:
+          <<: *deploy-dev-app
+          condition:
+            changesets:
+              excludePaths:
+                - bitbucket-pipelines.yml
+                - ci/bootstrap.sh
+                - ci/template-version
+                - README.md
+                - CLAUDE.md
+                - .claudecodeignore
+                - .gitignore
+                - scripts/**
+                - database/**
   custom:
     rollback-dev-db:
       - variables:
@@ -251,7 +298,9 @@ pipelines:
     validate-build:
       import: validate-build@aperture
     build-and-deploy-dev:
-      import: build-and-deploy-dev@aperture
+      - step: *validate-config
+      - step: *test-database
+      - step: *deploy-dev-app
     deploy-existing-dev-image:
       - variables:
           - name: IMAGE_COMMIT
@@ -264,7 +313,7 @@ pipelines:
           services: [docker]
           script:
             - bash ci/bootstrap.sh
-            - bash .pipeline-tools/ci/run.sh deploy-existing-dev
+            - bash ci/deploy-dev-app.sh existing
     promote-to-qe:
       - variables:
           - name: RELEASE_TAG

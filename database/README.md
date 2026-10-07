@@ -43,7 +43,7 @@ scripts alongside this changelog. Historical EF migrations remain for reference.
 3. Commit this integration, then run `migrate-dev-db` from that commit. For QE,
    create a beta tag on the tested main commit and run `migrate-qe-db` with
    that `RELEASE_TAG`. Use RC and final tags for UAT and production. An application
-   delivery from a commit containing this integration can also perform the initial update.
+   delivery does not apply DEV migrations; run `migrate-dev-db` separately.
 4. Grant the application's separate runtime login access to the new schema and
    tables before starting the application. For example, as the migration owner,
    replacing `aperture_runtime` with the provisioned runtime role:
@@ -69,9 +69,11 @@ cause initial creation to fail instead of being silently adopted.
 
 ## Delivery flow
 
-- Normal DEV delivery publishes/resolves the image, applies the changelog from
-  `BITBUCKET_COMMIT`, then updates GitOps. Failure prevents the GitOps update.
-- Existing-image DEV delivery applies the changelog from `IMAGE_COMMIT`.
+- DEV application delivery publishes/resolves the image, then updates GitOps
+  without applying database migrations. This applies to automatic `main` builds,
+  `build-and-deploy-dev`, and `deploy-existing-dev-image`.
+- Run `migrate-dev-db` separately to apply the changelog from its pipeline commit.
+  Ensure any schema required by an application release exists before deploying it.
 - QE, UAT, and production promotions resolve `RELEASE_TAG` to a commit on main,
   verify its existing image, apply its changelog, then update GitOps with that
   image digest. QE uses beta tags, UAT uses RC tags, and production uses final

@@ -13,6 +13,25 @@ if ! command -v git >/dev/null 2>&1; then
   apt-get update
   apt-get install -y --no-install-recommends git ca-certificates
 fi
+# Self-hosted runners can leave /usr/bin/docker as an unusable bind mount.
+# Installing docker.io would make dpkg replace that mount and fail with EBUSY.
+# Extract only the CLI to /usr/local/bin; the Docker service supplies the daemon.
+# Keep Docker preparation limited to Bitbucket builds.
+if [[ -n "${BITBUCKET_BUILD_NUMBER:-}" ]] && ! docker --version >/dev/null 2>&1; then
+  apt-get update
+  (
+    DOCKER_CLI_DIR="$(mktemp -d)"
+    trap 'rm -rf "${DOCKER_CLI_DIR}"' EXIT
+    cd "${DOCKER_CLI_DIR}"
+    apt-get download docker.io
+    dpkg-deb --extract ./docker.io_*.deb ./extracted
+    install -m 0755 ./extracted/usr/bin/docker /usr/local/bin/docker
+  )
+  # Prefer the extracted CLI even if the runner's PATH puts /usr/bin first.
+  export PATH="/usr/local/bin:${PATH}"
+  hash -r
+  docker --version
+fi
 FETCH_DIR="$(mktemp -d "${PWD}/.pipeline-tools.XXXXXX")"
 trap 'rm -rf "${FETCH_DIR}"' EXIT
 GIT_TERMINAL_PROMPT=0 git -c credential.helper= \

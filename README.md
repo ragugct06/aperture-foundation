@@ -220,6 +220,12 @@ There is no authorization decision cache, Cerbos dependency, or scoped-role mode
 Pipeline implementation is maintained in `anovorx/aperture-pipeline-templates`,
 pinned to `v1.1.0` by both `bitbucket-pipelines.yml` and `ci/template-version`.
 `ci/bootstrap.sh` fetches the tagged scripts into ignored `.pipeline-tools/`.
+In Bitbucket, when the Docker CLI is missing or unusable, bootstrap downloads
+the `docker.io` package and extracts only its client to `/usr/local/bin/docker`.
+It does not install the package: self-hosted runners can bind-mount
+`/usr/bin/docker`, which dpkg cannot replace (`Device or resource busy`).
+The self-hosted Docker service supplies the daemon; the .NET SDK image needs
+the client for database checks, image builds, and deployments.
 `ci/service.env` supplies Foundation's project paths, service name, and database hook.
 
 PR validation, main/DEV delivery, and custom workflows without inputs use shared

@@ -6,7 +6,7 @@ options:
   size: 1x
 definitions:
   imports:
-    aperture: aperture-pipeline-templates:v1.1.0
+    aperture: aperture-pipeline-templates:v1.2.0
   services:
     docker:
       memory: 2048

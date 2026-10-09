@@ -9,12 +9,14 @@ if (!builder.Environment.IsDevelopment()) EnsureNoPlaceholders(builder.Configura
 builder.Services.Configure<TrustedDomainIdentityOptions>(
     builder.Configuration.GetSection("TrustedDomainIdentity"));
 
-// if (builder.Environment.IsDevelopment())
-// {
-builder.Services
-    .AddAuthentication("DevAuth")
-    .AddScheme<DevAuthOptions, DevAuthHandler>("DevAuth", _ => { });
-// }
+// DevAuth is opt-in through configuration: it is registered only when
+// DevAuth:Enabled is true, which no environment sets today.
+if (builder.Configuration.GetValue<bool>("DevAuth:Enabled"))
+{
+    builder.Services
+        .AddAuthentication("DevAuth")
+        .AddScheme<DevAuthOptions, DevAuthHandler>("DevAuth", _ => { });
+}
 
 builder.Services.AddEntitlementsInfrastructure(builder.Configuration);
 builder.Services.AddControllers();

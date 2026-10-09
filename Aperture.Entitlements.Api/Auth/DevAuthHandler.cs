@@ -9,8 +9,7 @@
 // appsettings.Development.json to simulate different callers.
 //
 // This file is compiled in all configurations but the handler is only
-// registered when Environment.IsDevelopment() AND DevAuth:Enabled = true.
-// Production builds never reach this code.
+// registered when DevAuth:Enabled = true (see Program.cs).
 
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;

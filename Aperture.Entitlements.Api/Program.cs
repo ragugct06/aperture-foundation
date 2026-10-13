@@ -10,7 +10,8 @@ builder.Services.Configure<TrustedDomainIdentityOptions>(
     builder.Configuration.GetSection("TrustedDomainIdentity"));
 
 // DevAuth is opt-in through configuration: it is registered only when
-// DevAuth:Enabled is true, which no environment sets today.
+// DevAuth:Enabled is true. appsettings.json sets it to false; a developer can
+// turn it on locally in appsettings.Development.json.
 if (builder.Configuration.GetValue<bool>("DevAuth:Enabled"))
 {
     builder.Services

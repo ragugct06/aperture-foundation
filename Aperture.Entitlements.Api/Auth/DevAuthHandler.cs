@@ -1,4 +1,4 @@
-// DEV ONLY — never active outside the Development environment.
+// DEV ONLY - inactive unless DevAuth:Enabled is true (false in appsettings.json).
 // When DevAuth:Enabled is true in appsettings.Development.json, every incoming
 // request is auto-authenticated with a hardcoded identity so the team can call
 // APIs locally without needing a real Azure AD token or running AAD infrastructure.

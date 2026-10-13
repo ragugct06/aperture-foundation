@@ -61,8 +61,9 @@ scripts alongside this changelog. Historical EF migrations remain for reference.
    login credentials or substitute for object ownership.
 
 The baseline creates five tables in `entitlement`: `app_user`, `app_role`,
-`role_assignment`, `entitlement_outbox`, and `user_credential`. It seeds Admin,
-ClaimsSpecialist, ProgramManager, and CashPosting roles, without creating users or
+`role_assignment`, `entitlement_outbox`, and `user_credential`. It seeds the eight
+BRD roles (Admin, ITAdmin, Management, BenefitsSpecialist, ClaimsSpecialist,
+CashPosting, ReportingSpecialist, ProgramManager), without creating users or
 passwords. Liquibase tracks applied changes in `public.databasechangelog` and
 serializes updates with `public.databasechangeloglock`. Existing application tables
 cause initial creation to fail instead of being silently adopted.

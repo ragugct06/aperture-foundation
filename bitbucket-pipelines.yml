@@ -278,6 +278,10 @@ pipelines:
           <<: *release-step
           name: Migrate UAT Tagged Release
           deployment: UAT
+          runs-on:
+            - self.hosted
+            - linux
+            - aperture.uat
           services: [docker]
           script:
             - bash ci/bootstrap.sh
@@ -336,6 +340,10 @@ pipelines:
           <<: *release-step
           name: Promote UAT Tagged Release
           deployment: UAT
+          runs-on:
+            - self.hosted
+            - linux
+            - aperture.uat
           services: [docker]
           script:
             - bash ci/bootstrap.sh

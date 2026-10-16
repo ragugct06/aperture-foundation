@@ -27,8 +27,8 @@ public sealed class LoginSessionOptions
 {
     public const string SectionName = "Session";
 
-    /// <summary>Idle timeout (sliding): a session ends after this long with no request that resolved it.</summary>
-    public TimeSpan Lifetime { get; set; } = TimeSpan.FromMinutes(30);
+    /// <summary>Sliding lifetime: a session ends after this long with no request that resolved it.</summary>
+    public TimeSpan Lifetime { get; set; } = TimeSpan.FromHours(8);
 
     /// <summary>Cookie that carries the session id to browsers. Header X-Aperture-Session is accepted too.</summary>
     public string CookieName { get; set; } = "Aperture.Session";

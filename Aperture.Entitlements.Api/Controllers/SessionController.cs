@@ -11,16 +11,14 @@ namespace Aperture.Entitlements.Api.Controllers;
 /// short-lived cache, passing the session id from the X-Aperture-Session header or the cookie.
 /// Both endpoints authenticate the caller by the session itself, so they bypass the trusted-identity
 /// guard with AllowAnonymous.
-///
-/// Routes: GET entitlement/v1/session, DELETE entitlement/v1/session, POST entitlement/v1/logout.
 /// </summary>
 [ApiController]
-[Route("entitlement/v1")]
+[Route("entitlement/v1/session")]
 public sealed class SessionController(
     ISessionService sessions,
     IOptions<LoginSessionOptions> options) : ControllerBase
 {
-    [HttpGet("session")]
+    [HttpGet]
     [AllowAnonymous]
     [ProducesResponseType<SessionResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<SessionResponse>(StatusCodes.Status401Unauthorized)]
@@ -34,8 +32,8 @@ public sealed class SessionController(
         return Ok(SessionResponse.From(session));
     }
 
-    [HttpDelete("session")]
-    [HttpPost("logout")]
+    [HttpDelete]
+    [HttpPost("~/entitlement/v1/logout")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> End(CancellationToken ct)

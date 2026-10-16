@@ -19,9 +19,7 @@ if (builder.Configuration.GetValue<bool>("DevAuth:Enabled"))
         .AddScheme<DevAuthOptions, DevAuthHandler>("DevAuth", _ => { });
 }
 
-builder.Services.AddEntitlementsInfrastructure(
-    builder.Configuration,
-    requireDistributedCache: !builder.Environment.IsDevelopment());
+builder.Services.AddEntitlementsInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
 builder.Services.AddRateLimiter(options =>
 {

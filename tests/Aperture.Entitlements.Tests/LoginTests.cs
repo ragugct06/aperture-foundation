@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace Aperture.Entitlements.Tests;
 
@@ -44,11 +43,7 @@ public sealed class LoginTests
             "test",
             DateTimeOffset.UtcNow));
         await db.SaveChangesAsync();
-        var sessions = SessionTestSupport.NewSessionService();
-        var controller = new LoginController(
-            new LoginService(db, TimeProvider.System),
-            sessions,
-            Options.Create(new LoginSessionOptions()))
+        var controller = new LoginController(new LoginService(db, TimeProvider.System))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -63,16 +58,6 @@ public sealed class LoginTests
             Assert.Equal("User", loginResponse.LastName);
             Assert.Equal("test@example.test", loginResponse.Email);
             Assert.Equal(["ClaimsSpecialist"], loginResponse.Roles);
-
-            // APP-1417: a successful login creates a resolvable server-side session and sets the cookie.
-            Assert.NotNull(loginResponse.SessionId);
-            var session = await sessions.GetAsync(loginResponse.SessionId, default);
-            Assert.NotNull(session);
-            Assert.Equal("test@example.test", session.Email);
-            Assert.Equal(["ClaimsSpecialist"], session.Roles);
-            var setCookie = controller.Response.Headers.SetCookie.ToString();
-            Assert.Contains($"Aperture.Session={loginResponse.SessionId}", setCookie);
-            Assert.Contains("httponly", setCookie, StringComparison.OrdinalIgnoreCase);
         }
         else
         {
@@ -80,8 +65,6 @@ public sealed class LoginTests
             Assert.Null(loginResponse.LastName);
             Assert.Null(loginResponse.Email);
             Assert.Empty(loginResponse.Roles);
-            Assert.Null(loginResponse.SessionId);
-            Assert.Empty(controller.Response.Headers.SetCookie.ToString());
         }
         Assert.Equal("no-store", controller.Response.Headers.CacheControl.ToString());
     }

@@ -43,8 +43,7 @@ public sealed class LoginController(
             HttpOnly = true,
             Secure = Request.IsHttps,
             SameSite = SameSiteMode.Strict,
-            Path = "/",
-            MaxAge = sessionOptions.Value.Lifetime
+            Path = "/"
         });
 
         return Ok(new LoginResponse(

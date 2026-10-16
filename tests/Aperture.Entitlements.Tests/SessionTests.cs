@@ -81,7 +81,7 @@ public sealed class SessionServiceTests
     }
 
     [Fact]
-    public async Task Session_expires_after_the_sliding_lifetime_without_activity()
+    public async Task Session_expires_after_the_idle_timeout_without_activity()
     {
         var clock = new TestClock();
 #pragma warning disable CS0618 // MemoryDistributedCacheOptions only exposes the legacy ISystemClock hook.
@@ -91,13 +91,13 @@ public sealed class SessionServiceTests
         var sut = SessionTestSupport.NewSessionService(cache, clock);
         var created = await sut.CreateAsync(SessionTestSupport.Alice(), default);
 
-        clock.Advance(TimeSpan.FromHours(7));
+        clock.Advance(TimeSpan.FromMinutes(25));
         Assert.NotNull(await sut.GetAsync(created.SessionId, default));
 
-        clock.Advance(TimeSpan.FromHours(7));
+        clock.Advance(TimeSpan.FromMinutes(25));
         Assert.NotNull(await sut.GetAsync(created.SessionId, default));
 
-        clock.Advance(TimeSpan.FromHours(9));
+        clock.Advance(TimeSpan.FromMinutes(35));
         Assert.Null(await sut.GetAsync(created.SessionId, default));
     }
 

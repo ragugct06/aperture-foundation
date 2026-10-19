@@ -245,12 +245,12 @@ Application changes and `ci/service.env` changes trigger full validation for PRs
 targeting `main`, and full validation plus ECR publication/DEV deployment on `main`.
 The change filters are maintained in the exported template YAML.
 Other PR targets run
-configuration validation and, when relevant, the database check. Image scanning temporarily
-reports fixable HIGH/CRITICAL vulnerabilities without failing on findings
-(`IMAGE_SCAN_EXIT_CODE=0`, the default). Set `IMAGE_SCAN_EXIT_CODE=1` in Bitbucket
-variables to restore blocking on findings. Scanner execution errors still fail
-in either mode. The JSON scan report and TRX test results are published as
-artifacts. NuGet packages and the Trivy database are cached.
+configuration validation and, when relevant, the database check. Image scanning
+blocks fixable HIGH/CRITICAL vulnerabilities by default
+(`IMAGE_SCAN_EXIT_CODE=1`). Set `IMAGE_SCAN_EXIT_CODE=0` only for temporary
+report-only mode. Scanner execution errors still fail in either mode. The JSON
+scan report and TRX test results are published as artifacts. NuGet packages and
+the Trivy database are cached.
 
 Promotions use existing release tags from trunk: `1.0.0-beta.1` for QE,
 `1.0.0-rc.1` for UAT, and `1.0.0` for production. An optional `v` prefix is

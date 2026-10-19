@@ -9,7 +9,18 @@ if [[ -n "${1:-}" && "$1" != "${VERSION}" ]]; then
   echo "ERROR: Imported YAML and ci/template-version must select the same release." >&2; exit 1
 fi
 : "${PIPELINE_TEMPLATE_ACCESS_TOKEN:?Set the secured read-only template repository token}"
+# Runners cannot reach the Ubuntu mirrors on port 80, so use HTTPS for apt.
+# Images can ship HTTP repositories in either legacy or deb822 source files.
+use_https_apt_sources() {
+  local source_file
+  for source_file in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+    if [[ -f "${source_file}" ]]; then
+      sed -i 's|http://|https://|g' "${source_file}"
+    fi
+  done
+}
 if ! command -v git >/dev/null 2>&1; then
+  use_https_apt_sources
   apt-get update
   apt-get install -y --no-install-recommends git ca-certificates
 fi
@@ -18,6 +29,7 @@ fi
 # Extract only the CLI to /usr/local/bin; the Docker service supplies the daemon.
 # Keep Docker preparation limited to Bitbucket builds.
 if [[ -n "${BITBUCKET_BUILD_NUMBER:-}" ]] && ! docker --version >/dev/null 2>&1; then
+  use_https_apt_sources
   apt-get update
   (
     DOCKER_CLI_DIR="$(mktemp -d)"
